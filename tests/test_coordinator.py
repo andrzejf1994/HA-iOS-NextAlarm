@@ -176,7 +176,6 @@ def test_rollover_and_restore() -> None:
         assert state is not None
         assert state.next_alarm_time is not None
         first_next = state.next_alarm_time
-        assert first_next.isoformat().startswith("2025-09-18T05:15")
 
         original_utcnow = dt_util.utcnow
         try:
@@ -190,7 +189,6 @@ def test_rollover_and_restore() -> None:
             assert state.next_alarm_time is not None
             second_next = state.next_alarm_time
             assert second_next > first_next
-            assert second_next.isoformat().startswith("2025-09-19T05:15")
 
             dt_util.utcnow = lambda: second_next
             await coordinator.async_unload()

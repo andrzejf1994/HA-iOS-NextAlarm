@@ -247,16 +247,13 @@ class NextAlarmCoordinator:
             maps=maps,
             map_errors=map_errors,
         )
-        now = dt_util.utcnow()
-        computation = helpers.compute_next_alarm(
-            normalized.alarms, now, self._timezone
         )
 
         state.normalized_alarms = normalized.alarms
         state.parse_errors = normalized.parse_errors
         state.map_errors = list(normalized.map_errors)
         state.map_locale = normalized.map_locale
-        state.last_event_time = event.time_fired
+
         state.next_alarm_key = computation.alarm.key if computation.alarm else None
         state.next_alarm_time = computation.next_time
         state.note = computation.note
@@ -265,7 +262,7 @@ class NextAlarmCoordinator:
         state.raw_event = {
             "event_type": event.event_type,
             "origin": event.origin,
-            "time_fired": event.time_fired.isoformat(),
+
             "context": helpers.ensure_serializable(event.context.as_dict()),
             "data": helpers.ensure_serializable(event.data),
         }
