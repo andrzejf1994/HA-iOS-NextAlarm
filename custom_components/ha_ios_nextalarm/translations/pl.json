@@ -1,0 +1,39 @@
+{
+  "config": {
+    "flow_title": "HA iOS NextAlarm",
+    "step": {
+      "user": {
+        "title": "Konfiguracja HA iOS NextAlarm",
+        "description": "Zatwierdź, aby rozpocząć nasłuchiwanie zdarzeń Next Alarm z iOS."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Można skonfigurować tylko jedną integrację HA iOS NextAlarm."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcje HA iOS NextAlarm",
+        "description": "Dostosuj interpretację nazw dni tygodnia z automatyzacji.",
+        "data": {
+          "weekday_locale": "Mapa dni tygodnia",
+          "weekday_custom_map": "Niestandardowa mapa dni tygodnia (JSON)"
+        }
+      }
+    },
+    "error": {
+      "invalid_custom_map": "Mapa dni tygodnia musi być prawidłowym JSON-em bez błędów."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_alarm": {
+        "name": "Następny alarm"
+      },
+      "next_alarm_diagnostics": {
+        "name": "Diagnostyka alarmów"
+      }
+    }
+  }
+}
