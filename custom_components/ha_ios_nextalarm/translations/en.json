@@ -1,0 +1,39 @@
+{
+  "config": {
+    "flow_title": "HA iOS NextAlarm",
+    "step": {
+      "user": {
+        "title": "Set up HA iOS NextAlarm",
+        "description": "Confirm to start listening for iOS Next Alarm events."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one HA iOS NextAlarm integration can be configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HA iOS NextAlarm options",
+        "description": "Adjust how weekday names from the shortcut are interpreted.",
+        "data": {
+          "weekday_locale": "Weekday locale",
+          "weekday_custom_map": "Custom weekday map (JSON)"
+        }
+      }
+    },
+    "error": {
+      "invalid_custom_map": "Custom weekday map must be valid JSON without validation errors."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_alarm": {
+        "name": "Next alarm"
+      },
+      "next_alarm_diagnostics": {
+        "name": "Next alarm diagnostics"
+      }
+    }
+  }
+}
