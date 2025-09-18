@@ -11,7 +11,10 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.util.slugify import slugify
+try:  # Home Assistant 2023.12+
+    from homeassistant.util import slugify
+except ImportError:  # pragma: no cover - fallback for older Home Assistant
+    from homeassistant.util.slugify import slugify
 
 from .const import ATTR_NOTE, DOMAIN, MAP_VERSION
 from .coordinator import NextAlarmCoordinator, PersonState
