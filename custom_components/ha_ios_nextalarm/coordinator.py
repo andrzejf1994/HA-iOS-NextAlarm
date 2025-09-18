@@ -15,7 +15,10 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
-from homeassistant.util.slugify import slugify
+try:  # Home Assistant 2023.12+
+    from homeassistant.util import slugify
+except ImportError:  # pragma: no cover - fallback for older Home Assistant
+    from homeassistant.util.slugify import slugify
 
 from .const import (
     CONF_WEEKDAY_CUSTOM_MAP,
