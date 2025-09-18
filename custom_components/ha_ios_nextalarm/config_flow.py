@@ -9,11 +9,6 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 
-try:  # Home Assistant 2024.6+
-    from homeassistant.data_entry_flow import FlowResult
-except ImportError:  # pragma: no cover - compatibility with older cores / tests
-    FlowResult = dict[str, Any]  # type: ignore[misc, assignment]
-
 from .const import (
     CONF_WEEKDAY_CUSTOM_MAP,
     CONF_WEEKDAY_LOCALE,
