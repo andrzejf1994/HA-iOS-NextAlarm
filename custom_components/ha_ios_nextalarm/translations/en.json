@@ -8,7 +8,8 @@
       }
     },
     "abort": {
-      "single_instance_allowed": "Only one HA iOS NextAlarm integration can be configured."
+      "single_instance_allowed": "Only one HA iOS NextAlarm integration can be configured.",
+      "already_configured": "Only one HA iOS NextAlarm integration can be configured."
     }
   },
   "options": {

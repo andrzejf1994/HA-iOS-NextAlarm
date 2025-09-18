@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo  # Import tzinfo for explicit return typing.
 import logging
 from typing import Any
 
@@ -200,7 +200,9 @@ class NextAlarmCoordinator:
             self._schedule_rollover(state)
 
     @property
-    def _timezone(self):
+    def _timezone(self) -> tzinfo:
+        """Return the active timezone, falling back to UTC when unset."""
+
         tz_name = self.hass.config.time_zone
         timezone = dt_util.get_time_zone(tz_name) if tz_name else None
         return timezone or dt_util.UTC
@@ -247,12 +249,19 @@ class NextAlarmCoordinator:
             maps=maps,
             map_errors=map_errors,
         )
+
+        reference_now = event.time_fired or dt_util.utcnow()
+        # Use the event time as reference to keep schedule calculations deterministic.
+        computation = helpers.compute_next_alarm(
+            normalized.alarms, reference_now, self._timezone
         )
 
         state.normalized_alarms = normalized.alarms
         state.parse_errors = normalized.parse_errors
         state.map_errors = list(normalized.map_errors)
         state.map_locale = normalized.map_locale
+
+        state.last_event_time = reference_now  # Store when the payload was received for diagnostics.
 
         state.next_alarm_key = computation.alarm.key if computation.alarm else None
         state.next_alarm_time = computation.next_time
@@ -262,9 +271,9 @@ class NextAlarmCoordinator:
         state.raw_event = {
             "event_type": event.event_type,
             "origin": event.origin,
-
             "context": helpers.ensure_serializable(event.context.as_dict()),
             "data": helpers.ensure_serializable(event.data),
+            "time_fired": reference_now.isoformat(),  # Persist the firing time for traceability.
         }
 
         self._schedule_rollover(state)

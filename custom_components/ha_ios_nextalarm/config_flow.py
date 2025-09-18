@@ -7,6 +7,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.data_entry_flow import FlowResult  # Import FlowResult for HA typing compliance.
 from homeassistant.core import callback
 
 from .const import (
@@ -27,8 +28,15 @@ class NextAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Handle the initial step."""
 
+        await self.async_set_unique_id(
+            DOMAIN
+        )  # Ensure Home Assistant tracks a single instance via unique ID.
         if self._async_current_entries():
+            # Surface a translation-aligned abort when the integration already exists.
             return self.async_abort(reason="single_instance_allowed")
+        if result := self._abort_if_unique_id_configured():
+            # Defer to the core helper so duplicate flows triggered externally abort safely.
+            return result
 
         if user_input is not None:
             return self.async_create_entry(
@@ -37,7 +45,11 @@ class NextAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 options=dict(DEFAULT_OPTIONS),
             )
 
-        return self.async_show_form(step_id="user")
+        # Present an explicit empty schema so the UI renders a confirmation form without validation errors.
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema({}),
+        )
 
     @staticmethod
     @callback
