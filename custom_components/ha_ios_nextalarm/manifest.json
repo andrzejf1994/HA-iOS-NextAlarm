@@ -5,7 +5,7 @@
   "integration_type": "hub",
   "iot_class": "local_push",
   "config_flow": true,
-  "documentation": "https://github.com/example/ha-ios-nextalarm",
+  "documentation": "https://github.com/andrzejf1994/HA-iOS-NextAlarm",
   "requirements": [],
-  "codeowners": ["@example"]
+  "codeowners": ["@andrzejf1994"]
 }
