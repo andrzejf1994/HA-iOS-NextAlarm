@@ -9,6 +9,8 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.restore_state import RestoreEntity
 try:  # Home Assistant 2023.12+
@@ -19,6 +21,39 @@ except ImportError:  # pragma: no cover - fallback for older Home Assistant
 from .const import ATTR_NOTE, DOMAIN, MAP_VERSION
 from .coordinator import NextAlarmCoordinator, PersonState
 from .helpers import build_normalized_preview, describe_time_until
+
+DEVICE_MANUFACTURER = "Home Assistant Companion"
+
+
+def _device_identifier(coordinator: NextAlarmCoordinator, slug: str) -> tuple[str, str]:
+    """Return the identifier tuple for a person's device entry."""
+
+    return (DOMAIN, f"{coordinator.entry.entry_id}_{slug}")
+
+
+def _device_name(coordinator: NextAlarmCoordinator, slug: str) -> str:
+    """Return the friendly name for a person's device."""
+
+    state = coordinator.get_person_state(slug)
+    if state and state.person:
+        return state.person
+    return slugify(slug)
+
+
+def _async_update_device_registry(
+    hass: HomeAssistant | None, coordinator: NextAlarmCoordinator, slug: str
+) -> None:
+    """Ensure a device exists for the person and update its metadata."""
+
+    if hass is None:
+        return
+    name = _device_name(coordinator, slug)
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=coordinator.entry.entry_id,
+        identifiers={_device_identifier(coordinator, slug)},
+        manufacturer=DEVICE_MANUFACTURER,
+        name=name,
+    )
 
 NOTE_MESSAGES = {
     "no_alarms": "No alarms provided",
@@ -84,12 +119,17 @@ class NextAlarmSensor(RestoreEntity, SensorEntity):
 
     @callback
     def _handle_update(self) -> None:
-        state = self._coordinator.get_person_state(self._slug)
-        if state:
-            self._attr_name = state.person
-        else:
-            self._attr_name = slugify(self._slug)
+        self._attr_name = _device_name(self._coordinator, self._slug)
+        _async_update_device_registry(self.hass, self._coordinator, self._slug)
         self.async_write_ha_state()
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={_device_identifier(self._coordinator, self._slug)},
+            manufacturer=DEVICE_MANUFACTURER,
+            name=_device_name(self._coordinator, self._slug),
+        )
 
     @property
     def available(self) -> bool:
@@ -157,11 +197,8 @@ class NextAlarmDiagnosticsSensor(RestoreEntity, SensorEntity):
 
     @callback
     def _handle_update(self) -> None:
-        state = self._coordinator.get_person_state(self._slug)
-        if state:
-            self._attr_name = state.person
-        else:
-            self._attr_name = slugify(self._slug)
+        self._attr_name = _device_name(self._coordinator, self._slug)
+        _async_update_device_registry(self.hass, self._coordinator, self._slug)
         self.async_write_ha_state()
 
     @property
@@ -198,3 +235,11 @@ class NextAlarmDiagnosticsSensor(RestoreEntity, SensorEntity):
         if state.raw_event:
             attributes["event"] = state.raw_event
         return attributes
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={_device_identifier(self._coordinator, self._slug)},
+            manufacturer=DEVICE_MANUFACTURER,
+            name=_device_name(self._coordinator, self._slug),
+        )
