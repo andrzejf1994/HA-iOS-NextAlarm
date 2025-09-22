@@ -106,19 +106,23 @@ def parse_alarm_datetime(value: str, tzinfo) -> datetime:
     if not text:
         raise ValueError("missing datetime value")
 
-    # Primary format: 24-hour clock "dd.MM.yyyy HH:mm"
-    try:
-        naive = datetime.strptime(text, "%d.%m.%Y %H:%M")
-    except ValueError:
-        upper = text.upper()
-        if "AM" in upper or "PM" in upper:
-            try:
-                naive = datetime.strptime(text, "%m/%d/%Y %I:%M %p")
-            except ValueError as exc:
-                raise ValueError(f"unsupported datetime format: {text}") from exc
-        else:
-            raise ValueError(f"unsupported datetime format: {text}")
-    return _localize(naive, tzinfo)
+    parsed = dt_util.parse_datetime(text)
+    if parsed is None:
+        try:
+            parsed = datetime.strptime(text, "%d.%m.%Y %H:%M")
+        except ValueError:
+            upper = text.upper()
+            if "AM" in upper or "PM" in upper:
+                try:
+                    parsed = datetime.strptime(text, "%m/%d/%Y %I:%M %p")
+                except ValueError as exc:
+                    raise ValueError(f"unsupported datetime format: {text}") from exc
+            else:
+                raise ValueError(f"unsupported datetime format: {text}")
+
+    if parsed.tzinfo is None:
+        parsed = _localize(parsed, tzinfo)
+    return parsed.astimezone(tzinfo)
 
 
 def parse_on_off(value: Any, *, field: str, alarm_key: str, errors: list[str]) -> bool | None:
@@ -267,8 +271,16 @@ def normalize_event(
     normalized_alarms: dict[str, NormalizedAlarm] = {}
     all_repeat_lines: list[str] = []
 
-    for alarm in alarms.values():
-        raw_days = alarm.get("Repeat Days")
+    valid_alarms: dict[str, Mapping[str, Any]] = {}
+    for key, raw_alarm in alarms.items():
+        str_key = str(key)
+        if not isinstance(raw_alarm, Mapping):
+            parse_errors.append(
+                f"Alarm {str_key}: payload must be an object with alarm fields"
+            )
+            continue
+        valid_alarms[str_key] = raw_alarm
+        raw_days = raw_alarm.get("Repeat Days")
         if isinstance(raw_days, str):
             all_repeat_lines.extend(
                 [line.strip() for line in raw_days.splitlines() if line.strip()]
@@ -276,8 +288,8 @@ def normalize_event(
 
     map_locale = detect_weekday_locale(all_repeat_lines, locale_option, maps)
 
-    for key, raw_alarm in alarms.items():
-        label = str(raw_alarm.get("Label", "")).strip() or str(key)
+    for key, raw_alarm in valid_alarms.items():
+        label = str(raw_alarm.get("Label", "")).strip() or key
         raw_date = raw_alarm.get("Date")
         if raw_date is None:
             parse_errors.append(f"Alarm {key}: missing Date")
@@ -288,13 +300,19 @@ def normalize_event(
             parse_errors.append(f"Alarm {key}: {err}")
             continue
 
-        state = parse_on_off(raw_alarm.get("State"), field="State", alarm_key=str(key), errors=parse_errors)
+        state = parse_on_off(
+            raw_alarm.get("State"), field="State", alarm_key=key, errors=parse_errors
+        )
         if state is None:
             continue
-        repeat = parse_on_off(raw_alarm.get("Repeat"), field="Repeat", alarm_key=str(key), errors=parse_errors)
+        repeat = parse_on_off(
+            raw_alarm.get("Repeat"), field="Repeat", alarm_key=key, errors=parse_errors
+        )
         if repeat is None:
             continue
-        snooze = parse_on_off(raw_alarm.get("Snooze"), field="Snooze", alarm_key=str(key), errors=parse_errors)
+        snooze = parse_on_off(
+            raw_alarm.get("Snooze"), field="Snooze", alarm_key=key, errors=parse_errors
+        )
         if snooze is None:
             continue
 
@@ -307,7 +325,7 @@ def normalize_event(
                 _,
             ) = normalize_repeat_days(
                 raw_alarm.get("Repeat Days", ""),
-                alarm_key=str(key),
+                alarm_key=key,
                 locale_option=map_locale,
                 maps=maps,
                 errors=parse_errors,
@@ -318,8 +336,8 @@ def normalize_event(
                 )
                 continue
 
-        normalized_alarms[str(key)] = NormalizedAlarm(
-            key=str(key),
+        normalized_alarms[key] = NormalizedAlarm(
+            key=key,
             label=label,
             enabled=state,
             repeat=repeat,
