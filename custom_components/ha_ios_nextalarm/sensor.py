@@ -13,6 +13,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util import dt as dt_util
 try:  # Home Assistant 2023.12+
     from homeassistant.util import slugify
 except ImportError:  # pragma: no cover - fallback for older Home Assistant
@@ -149,8 +150,17 @@ class NextAlarmSensor(RestoreEntity, SensorEntity):
         }
         if state and state.last_event_time:
             attributes["source_event_time"] = state.last_event_time.isoformat()
+            attributes["source_event_time_local"] = dt_util.as_local(
+                state.last_event_time
+            ).isoformat()
         if state and state.next_alarm_time:
             attributes["time_until"] = describe_time_until(state.next_alarm_time)
+            localized_alarm = dt_util.as_local(state.next_alarm_time)
+            attributes["next_alarm_time_local"] = localized_alarm.isoformat()
+            attributes["next_alarm_date_local"] = localized_alarm.date().isoformat()
+            attributes["next_alarm_clock_time_local"] = localized_alarm.strftime(
+                "%H:%M:%S"
+            )
         if state and state.next_alarm_key:
             alarm = state.normalized_alarms.get(state.next_alarm_key)
             if alarm:
@@ -228,6 +238,17 @@ class NextAlarmDiagnosticsSensor(RestoreEntity, SensorEntity):
                 state.normalized_alarms, state.schedule
             ),
         }
+        if state.last_event_time:
+            attributes["last_event_time_local"] = dt_util.as_local(
+                state.last_event_time
+            ).isoformat()
+        if state.next_alarm_time:
+            localized_alarm = dt_util.as_local(state.next_alarm_time)
+            attributes["next_alarm_time_local"] = localized_alarm.isoformat()
+            attributes["next_alarm_date_local"] = localized_alarm.date().isoformat()
+            attributes["next_alarm_clock_time_local"] = localized_alarm.strftime(
+                "%H:%M:%S"
+            )
         if state.raw_event:
             attributes["event"] = state.raw_event
         return attributes
