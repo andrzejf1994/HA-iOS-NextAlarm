@@ -38,6 +38,6 @@ The more frequently the shortcut runs, the more accurate your next alarm sensor 
 
 ## Usage
 
-Once configured, the integration provides a sensor entity named `sensor.<device_name>_next_alarm`. You can reference it in automations, scripts, or dashboards to trigger routines before your alarm rings.
+Once configured, the integration provides a sensor entity named `sensor.<device_name>_next_alarm`. You can reference it in automations, scripts, or dashboards to trigger routines before your alarm rings. If no alarm is currently enabled on the device, the sensor state is reported as `unknown`.
 
 If you encounter issues or have feature requests, please open an issue in the [GitHub repository](https://github.com/andrzejf1994/HA-iOS-NextAlarm).
