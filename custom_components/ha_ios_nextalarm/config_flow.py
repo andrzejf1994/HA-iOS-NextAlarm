@@ -70,34 +70,34 @@ class NextAlarmOptionsFlow(config_entries.OptionsFlow):
         current = dict(DEFAULT_OPTIONS)
         current.update(self.config_entry.options)
 
+        form_locale = current[CONF_WEEKDAY_LOCALE]
+        form_map = current[CONF_WEEKDAY_CUSTOM_MAP]
+        maps_preview, _ = helpers.build_weekday_maps(form_map)
+
         if user_input is not None:
-            locale = user_input[CONF_WEEKDAY_LOCALE]
-            custom_map = user_input.get(
+            form_locale = user_input[CONF_WEEKDAY_LOCALE]
+            form_map = user_input.get(
                 CONF_WEEKDAY_CUSTOM_MAP, DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP]
             )
-            _, map_errors = helpers.build_weekday_maps(custom_map)
+            maps_preview, map_errors = helpers.build_weekday_maps(form_map)
             if map_errors:
                 errors["base"] = "invalid_custom_map"
             else:
                 return self.async_create_entry(
                     data={
-                        CONF_WEEKDAY_LOCALE: locale,
-                        CONF_WEEKDAY_CUSTOM_MAP: custom_map,
+                        CONF_WEEKDAY_LOCALE: form_locale,
+                        CONF_WEEKDAY_CUSTOM_MAP: form_map,
                     }
                 )
 
-        locales = list(OPTION_WEEKDAY_LOCALES)
-        if current[CONF_WEEKDAY_LOCALE] not in locales:
-            locales.append(current[CONF_WEEKDAY_LOCALE])
+        locales = sorted({*OPTION_WEEKDAY_LOCALES, *maps_preview.keys(), form_locale})
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_WEEKDAY_LOCALE, default=current[CONF_WEEKDAY_LOCALE]): vol.In(
-                    locales
-                ),
+                vol.Required(CONF_WEEKDAY_LOCALE, default=form_locale): vol.In(locales),
                 vol.Optional(
                     CONF_WEEKDAY_CUSTOM_MAP,
-                    default=current[CONF_WEEKDAY_CUSTOM_MAP],
+                    default=form_map,
                 ): str,
             }
         )

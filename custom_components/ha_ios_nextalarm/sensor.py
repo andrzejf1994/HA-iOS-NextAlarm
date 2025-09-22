@@ -105,8 +105,7 @@ class NextAlarmSensor(RestoreEntity, SensorEntity):
     def __init__(self, coordinator: NextAlarmCoordinator, slug: str) -> None:
         self._coordinator = coordinator
         self._slug = slug
-        self.entity_id = f"sensor.{slug}_next_alarm"
-        self._attr_unique_id = f"ha_ios_nextalarm_next_{slug}"
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_{slug}_next"
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -119,7 +118,6 @@ class NextAlarmSensor(RestoreEntity, SensorEntity):
 
     @callback
     def _handle_update(self) -> None:
-        self._attr_name = _device_name(self._coordinator, self._slug)
         _async_update_device_registry(self.hass, self._coordinator, self._slug)
         self.async_write_ha_state()
 
@@ -183,8 +181,7 @@ class NextAlarmDiagnosticsSensor(RestoreEntity, SensorEntity):
     def __init__(self, coordinator: NextAlarmCoordinator, slug: str) -> None:
         self._coordinator = coordinator
         self._slug = slug
-        self.entity_id = f"sensor.{slug}_next_alarm_diagnostics"
-        self._attr_unique_id = f"ha_ios_nextalarm_diag_{slug}"
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_{slug}_diagnostics"
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -197,7 +194,6 @@ class NextAlarmDiagnosticsSensor(RestoreEntity, SensorEntity):
 
     @callback
     def _handle_update(self) -> None:
-        self._attr_name = _device_name(self._coordinator, self._slug)
         _async_update_device_registry(self.hass, self._coordinator, self._slug)
         self.async_write_ha_state()
 
