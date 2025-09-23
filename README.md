@@ -23,9 +23,13 @@ HA iOS Next Alarm is a custom integration for Home Assistant that exposes the ne
 
 ## iOS Shortcut setup
 
-1. Download the dedicated shortcut to your iPhone. You can import it directly into the **Shortcuts** app.
-2. When prompted, provide your name exactly as it appears in Home Assistant. This name is used to associate the device with your Home Assistant user.
+1. Download the dedicated shortcut to your iPhone using [this link](https://www.icloud.com/shortcuts/2c6c7b014d9a4553bd0eca6434582d70). You can import it directly into the **Shortcuts** app.
+2. During the import you will be prompted to provide your name exactly as it appears in Home Assistant and to choose the Home Assistant server the shortcut should call.
 3. Allow the shortcut to access the Home Assistant instance defined in the integration configuration.
+
+> **⚠️ Important warning about Apple Shortcuts**
+>
+> Apple currently has a bug that affects the shortcut when an alarm is configured to repeat on only a single day of the week. In this case the shortcut fails with an error and does not complete. As a workaround you can either delete that alarm, disable repeating for it, or add at least one more day to its repeat schedule. Advanced users can alternatively edit the shortcut and remove the `Repeat Days` key from the dictionary at the very bottom, but doing so means repeating alarms will only refresh after the shortcut runs again.
 
 ## Recommended automations
 
