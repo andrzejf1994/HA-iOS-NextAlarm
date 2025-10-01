@@ -153,6 +153,16 @@ class NextAlarmSensor(RestoreEntity, SensorEntity):
             attributes["source_event_time_local"] = dt_util.as_local(
                 state.last_event_time
             ).isoformat()
+        if state and state.previous_alarm_time:
+            attributes["previous_alarm_time"] = state.previous_alarm_time.isoformat()
+            localized_previous = dt_util.as_local(state.previous_alarm_time)
+            attributes["previous_alarm_time_local"] = localized_previous.isoformat()
+            attributes["previous_alarm_date_local"] = localized_previous.date().isoformat()
+            attributes["previous_alarm_clock_time_local"] = localized_previous.strftime(
+                "%H:%M:%S"
+            )
+        if state and state.previous_alarm_key:
+            attributes["previous_alarm_key"] = state.previous_alarm_key
         if state and state.next_alarm_time:
             attributes["time_until"] = describe_time_until(state.next_alarm_time)
             localized_alarm = dt_util.as_local(state.next_alarm_time)
@@ -231,6 +241,10 @@ class NextAlarmDiagnosticsSensor(RestoreEntity, SensorEntity):
             "next_alarm_time": state.next_alarm_time.isoformat()
             if state.next_alarm_time
             else None,
+            "previous_alarm_key": state.previous_alarm_key,
+            "previous_alarm_time": state.previous_alarm_time.isoformat()
+            if state.previous_alarm_time
+            else None,
             "source_person": state.person,
             "parse_errors": list(state.parse_errors),
             "map_errors": list(state.map_errors),
@@ -247,6 +261,13 @@ class NextAlarmDiagnosticsSensor(RestoreEntity, SensorEntity):
             attributes["next_alarm_time_local"] = localized_alarm.isoformat()
             attributes["next_alarm_date_local"] = localized_alarm.date().isoformat()
             attributes["next_alarm_clock_time_local"] = localized_alarm.strftime(
+                "%H:%M:%S"
+            )
+        if state.previous_alarm_time:
+            localized_previous = dt_util.as_local(state.previous_alarm_time)
+            attributes["previous_alarm_time_local"] = localized_previous.isoformat()
+            attributes["previous_alarm_date_local"] = localized_previous.date().isoformat()
+            attributes["previous_alarm_clock_time_local"] = localized_previous.strftime(
                 "%H:%M:%S"
             )
         if state.raw_event:
