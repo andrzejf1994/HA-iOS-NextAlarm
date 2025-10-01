@@ -49,6 +49,8 @@ class PersonState:
     raw_event: dict[str, Any] | None = None
     next_alarm_key: str | None = None
     next_alarm_time: datetime | None = None
+    previous_alarm_key: str | None = None
+    previous_alarm_time: datetime | None = None
     note: str | None = None
     schedule: dict[str, datetime | None] = field(default_factory=dict)
     timer_cancel: CALLBACK_TYPE | None = None
@@ -73,6 +75,10 @@ class PersonState:
             "next_alarm_time": self.next_alarm_time.isoformat()
             if self.next_alarm_time
             else None,
+            "previous_alarm_key": self.previous_alarm_key,
+            "previous_alarm_time": self.previous_alarm_time.isoformat()
+            if self.previous_alarm_time
+            else None,
             "note": self.note,
             "schedule": {
                 key: value.isoformat() if value else None
@@ -91,6 +97,7 @@ class PersonState:
         }
         last_event_time = dt_util.parse_datetime(data.get("last_event_time"))
         next_alarm_time = dt_util.parse_datetime(data.get("next_alarm_time"))
+        previous_alarm_time = dt_util.parse_datetime(data.get("previous_alarm_time"))
         schedule: dict[str, datetime | None] = {}
         for key, value in data.get("schedule", {}).items():
             schedule[key] = dt_util.parse_datetime(value) if value else None
@@ -105,6 +112,8 @@ class PersonState:
             raw_event=data.get("raw_event"),
             next_alarm_key=data.get("next_alarm_key"),
             next_alarm_time=next_alarm_time,
+            previous_alarm_key=data.get("previous_alarm_key"),
+            previous_alarm_time=previous_alarm_time,
             note=data.get("note"),
             schedule=schedule,
             map_version=int(data.get("map_version", MAP_VERSION)),
@@ -315,6 +324,9 @@ class NextAlarmCoordinator:
         if not state:
             return
         state.timer_cancel = None
+        if state.next_alarm_time or trigger_time:
+            state.previous_alarm_time = trigger_time or state.next_alarm_time
+            state.previous_alarm_key = state.next_alarm_key
         self._refresh_schedule(state, reference_time=trigger_time)
         self._schedule_rollover(state)
         await self._store.async_save(self._storage_payload())
