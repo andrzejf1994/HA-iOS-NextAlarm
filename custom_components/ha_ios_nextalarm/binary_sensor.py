@@ -96,6 +96,10 @@ class NextAlarmRefreshProblemBinarySensor(BinarySensorEntity):
         return state.refresh_problem
 
     @property
+    def available(self) -> bool:
+        return self._coordinator.get_person_state(self._slug) is not None
+
+    @property
     def extra_state_attributes(self) -> dict[str, str | None]:
         state = self._coordinator.get_person_state(self._slug)
         if not state:
