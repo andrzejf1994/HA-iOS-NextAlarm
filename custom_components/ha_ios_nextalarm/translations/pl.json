@@ -35,6 +35,11 @@
       "next_alarm_diagnostics": {
         "name": "Diagnostyka alarmów"
       }
+    },
+    "binary_sensor": {
+      "refresh_problem": {
+        "name": "Problem odświeżania"
+      }
     }
   }
 }

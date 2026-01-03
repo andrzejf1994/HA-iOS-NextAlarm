@@ -25,6 +25,7 @@ from .const import (
     CONF_WEEKDAY_LOCALE,
     DEFAULT_OPTIONS,
     EVENT_NEXT_ALARM,
+    EVENT_REFRESH_START,
     MAP_VERSION,
     SIGNAL_PERSON_UPDATED,
     STORAGE_KEY,
@@ -55,6 +56,11 @@ class PersonState:
     schedule: dict[str, datetime | None] = field(default_factory=dict)
     timer_cancel: CALLBACK_TYPE | None = None
     map_version: int = MAP_VERSION
+    last_refresh_start: datetime | None = None
+    last_refresh_end: datetime | None = None
+    refresh_problem: bool = False
+    refresh_timer_cancel: CALLBACK_TYPE | None = None
+    refresh_timeout_for: datetime | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return a dictionary representation safe for storage."""
@@ -85,6 +91,12 @@ class PersonState:
                 for key, value in self.schedule.items()
             },
             "map_version": self.map_version,
+            "last_refresh_start": self.last_refresh_start.isoformat()
+            if self.last_refresh_start
+            else None,
+            "last_refresh_end": self.last_refresh_end.isoformat()
+            if self.last_refresh_end
+            else None,
         }
 
     @classmethod
@@ -98,6 +110,8 @@ class PersonState:
         last_event_time = dt_util.parse_datetime(data.get("last_event_time"))
         next_alarm_time = dt_util.parse_datetime(data.get("next_alarm_time"))
         previous_alarm_time = dt_util.parse_datetime(data.get("previous_alarm_time"))
+        last_refresh_start = dt_util.parse_datetime(data.get("last_refresh_start"))
+        last_refresh_end = dt_util.parse_datetime(data.get("last_refresh_end"))
         schedule: dict[str, datetime | None] = {}
         for key, value in data.get("schedule", {}).items():
             schedule[key] = dt_util.parse_datetime(value) if value else None
@@ -117,6 +131,9 @@ class PersonState:
             note=data.get("note"),
             schedule=schedule,
             map_version=int(data.get("map_version", MAP_VERSION)),
+            last_refresh_start=last_refresh_start,
+            last_refresh_end=last_refresh_end,
+            refresh_problem=False,
         )
 
 
@@ -132,6 +149,7 @@ class NextAlarmCoordinator:
         self._person_states: dict[str, PersonState] = {}
         self._person_listeners: list[Callable[[str], None]] = []
         self._remove_listener: CALLBACK_TYPE | None = None
+        self._remove_refresh_listener: CALLBACK_TYPE | None = None
         self._lock = asyncio.Lock()
 
     @property
@@ -157,7 +175,11 @@ class NextAlarmCoordinator:
         self._remove_listener = self.hass.bus.async_listen(
             EVENT_NEXT_ALARM, self._async_handle_event
         )
+        self._remove_refresh_listener = self.hass.bus.async_listen(
+            EVENT_REFRESH_START, self._async_handle_refresh_start
+        )
         _LOGGER.debug("Listening for %s events", EVENT_NEXT_ALARM)
+        _LOGGER.debug("Listening for %s events", EVENT_REFRESH_START)
 
     async def async_unload(self) -> None:
         """Tear down the coordinator."""
@@ -165,10 +187,16 @@ class NextAlarmCoordinator:
         if self._remove_listener:
             self._remove_listener()
             self._remove_listener = None
+        if self._remove_refresh_listener:
+            self._remove_refresh_listener()
+            self._remove_refresh_listener = None
         for state in self._person_states.values():
             if state.timer_cancel:
                 state.timer_cancel()
                 state.timer_cancel = None
+            if state.refresh_timer_cancel:
+                state.refresh_timer_cancel()
+                state.refresh_timer_cancel = None
         await self._store.async_save(self._storage_payload())
 
     def async_add_person_listener(self, listener: Callable[[str], None]) -> Callable[[], None]:
@@ -230,6 +258,12 @@ class NextAlarmCoordinator:
         async with self._lock:
             await self._async_process_event(event)
 
+    async def _async_handle_refresh_start(self, event: Event) -> None:
+        """Handle an incoming refresh start event."""
+
+        async with self._lock:
+            await self._async_process_refresh_start(event)
+
     async def _async_process_event(self, event: Event) -> None:
         person_raw = event.data.get("person")
         if not person_raw:
@@ -274,6 +308,10 @@ class NextAlarmCoordinator:
         state.map_locale = normalized.map_locale
 
         state.last_event_time = reference_now  # Store when the payload was received for diagnostics.
+        state.last_refresh_end = reference_now
+        state.refresh_problem = False
+        state.refresh_timeout_for = None
+        self._cancel_refresh_timer(state)
 
         state.next_alarm_key = computation.alarm.key if computation.alarm else None
         state.next_alarm_time = computation.next_time
@@ -295,6 +333,30 @@ class NextAlarmCoordinator:
             state.person,
             state.next_alarm_time,
         )
+        self._notify_person_update(slug)
+
+    async def _async_process_refresh_start(self, event: Event) -> None:
+        person_raw = event.data.get("person")
+        if not person_raw:
+            _LOGGER.warning("Received %s event without person", EVENT_REFRESH_START)
+            return
+
+        slug = slugify(str(person_raw)) or str(person_raw).strip().casefold()
+        if slug not in self._person_states:
+            self._person_states[slug] = PersonState(slug=slug, person=str(person_raw))
+            self._notify_new_person(slug)
+        state = self._person_states[slug]
+        state.person = str(person_raw)
+
+        reference_now = event.time_fired or dt_util.utcnow()
+        state.last_refresh_start = reference_now
+        state.refresh_problem = False
+        state.refresh_timeout_for = reference_now
+        self._cancel_refresh_timer(state)
+        self._schedule_refresh_timeout(state, reference_now)
+
+        await self._store.async_save(self._storage_payload())
+        _LOGGER.debug("Processed refresh start event for %s", state.person)
         self._notify_person_update(slug)
 
     def _notify_new_person(self, slug: str) -> None:
@@ -365,3 +427,34 @@ class NextAlarmCoordinator:
 
     def _storage_payload(self) -> dict[str, Any]:
         return {"persons": {slug: state.as_dict() for slug, state in self._person_states.items()}}
+
+    def _schedule_refresh_timeout(self, state: PersonState, reference_now: datetime) -> None:
+        def _fire(now: datetime) -> None:
+            expected_start = state.refresh_timeout_for
+            self.hass.async_create_task(
+                self._async_mark_refresh_timeout(state.slug, now, expected_start)
+            )
+
+        state.refresh_timer_cancel = async_track_point_in_time(
+            self.hass, _fire, reference_now + timedelta(seconds=20)
+        )
+
+    def _cancel_refresh_timer(self, state: PersonState) -> None:
+        if state.refresh_timer_cancel:
+            state.refresh_timer_cancel()
+            state.refresh_timer_cancel = None
+
+    async def _async_mark_refresh_timeout(
+        self, slug: str, trigger_time: datetime, expected_start: datetime | None
+    ) -> None:
+        state = self._person_states.get(slug)
+        if not state:
+            return
+        if state.last_refresh_start != expected_start:
+            return
+        state.refresh_timer_cancel = None
+        state.refresh_problem = True
+        state.refresh_timeout_for = None
+        await self._store.async_save(self._storage_payload())
+        _LOGGER.debug("Refresh timeout marked for %s at %s", state.person, trigger_time)
+        self._notify_person_update(slug)

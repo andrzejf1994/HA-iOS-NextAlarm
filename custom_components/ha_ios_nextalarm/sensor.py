@@ -153,6 +153,16 @@ class NextAlarmSensor(RestoreEntity, SensorEntity):
             attributes["source_event_time_local"] = dt_util.as_local(
                 state.last_event_time
             ).isoformat()
+        if state and state.last_refresh_start:
+            attributes["last_refresh_start"] = state.last_refresh_start.isoformat()
+            attributes["last_refresh_start_local"] = dt_util.as_local(
+                state.last_refresh_start
+            ).isoformat()
+        if state and state.last_refresh_end:
+            attributes["last_refresh_end"] = state.last_refresh_end.isoformat()
+            attributes["last_refresh_end_local"] = dt_util.as_local(
+                state.last_refresh_end
+            ).isoformat()
         if state and state.previous_alarm_time:
             attributes["previous_alarm_time"] = state.previous_alarm_time.isoformat()
             localized_previous = dt_util.as_local(state.previous_alarm_time)
@@ -251,7 +261,18 @@ class NextAlarmDiagnosticsSensor(RestoreEntity, SensorEntity):
             "normalized_preview": build_normalized_preview(
                 state.normalized_alarms, state.schedule
             ),
+            "refresh_problem": state.refresh_problem,
         }
+        if state.last_refresh_start:
+            attributes["last_refresh_start"] = state.last_refresh_start.isoformat()
+            attributes["last_refresh_start_local"] = dt_util.as_local(
+                state.last_refresh_start
+            ).isoformat()
+        if state.last_refresh_end:
+            attributes["last_refresh_end"] = state.last_refresh_end.isoformat()
+            attributes["last_refresh_end_local"] = dt_util.as_local(
+                state.last_refresh_end
+            ).isoformat()
         if state.last_event_time:
             attributes["last_event_time_local"] = dt_util.as_local(
                 state.last_event_time
