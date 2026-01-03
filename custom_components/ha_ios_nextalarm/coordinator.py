@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, tzinfo  # Import tzinfo for explicit return typing.
 import logging
+import uuid
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -60,7 +61,7 @@ class PersonState:
     last_refresh_end: datetime | None = None
     refresh_problem: bool = False
     refresh_timer_cancel: CALLBACK_TYPE | None = None
-    refresh_timeout_for: datetime | None = None
+    refresh_timeout_token: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return a dictionary representation safe for storage."""
@@ -310,7 +311,7 @@ class NextAlarmCoordinator:
         state.last_event_time = reference_now  # Store when the payload was received for diagnostics.
         state.last_refresh_end = reference_now
         state.refresh_problem = False
-        state.refresh_timeout_for = None
+        state.refresh_timeout_token = None
         self._cancel_refresh_timer(state)
 
         state.next_alarm_key = computation.alarm.key if computation.alarm else None
@@ -350,10 +351,12 @@ class NextAlarmCoordinator:
 
         reference_now = event.time_fired or dt_util.utcnow()
         state.last_refresh_start = reference_now
-        state.refresh_problem = False
-        state.refresh_timeout_for = reference_now
         self._cancel_refresh_timer(state)
-        self._schedule_refresh_timeout(state, reference_now)
+        state.refresh_timeout_token = None
+        state.refresh_problem = False
+        token = uuid.uuid4().hex
+        state.refresh_timeout_token = token
+        self._schedule_refresh_timeout(state, reference_now, token)
 
         await self._store.async_save(self._storage_payload())
         _LOGGER.debug("Processed refresh start event for %s", state.person)
@@ -428,11 +431,12 @@ class NextAlarmCoordinator:
     def _storage_payload(self) -> dict[str, Any]:
         return {"persons": {slug: state.as_dict() for slug, state in self._person_states.items()}}
 
-    def _schedule_refresh_timeout(self, state: PersonState, reference_now: datetime) -> None:
+    def _schedule_refresh_timeout(
+        self, state: PersonState, reference_now: datetime, token: str
+    ) -> None:
         def _fire(now: datetime) -> None:
-            expected_start = state.refresh_timeout_for
             self.hass.async_create_task(
-                self._async_mark_refresh_timeout(state.slug, now, expected_start)
+                self._async_mark_refresh_timeout(state.slug, now, token)
             )
 
         state.refresh_timer_cancel = async_track_point_in_time(
@@ -445,16 +449,16 @@ class NextAlarmCoordinator:
             state.refresh_timer_cancel = None
 
     async def _async_mark_refresh_timeout(
-        self, slug: str, trigger_time: datetime, expected_start: datetime | None
+        self, slug: str, trigger_time: datetime, token: str
     ) -> None:
         state = self._person_states.get(slug)
         if not state:
             return
-        if state.last_refresh_start != expected_start:
+        if state.refresh_timeout_token != token:
             return
         state.refresh_timer_cancel = None
         state.refresh_problem = True
-        state.refresh_timeout_for = None
+        state.refresh_timeout_token = None
         await self._store.async_save(self._storage_payload())
         _LOGGER.debug("Refresh timeout marked for %s at %s", state.person, trigger_time)
         self._notify_person_update(slug)
