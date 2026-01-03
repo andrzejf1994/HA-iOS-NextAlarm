@@ -7,8 +7,9 @@ from typing import Final
 from homeassistant.const import Platform
 
 DOMAIN: Final = "ha_ios_nextalarm"
-PLATFORMS: Final = [Platform.SENSOR]
+PLATFORMS: Final = [Platform.SENSOR, Platform.BINARY_SENSOR]
 EVENT_NEXT_ALARM: Final = "ha_ios_nextalarm"
+EVENT_REFRESH_START: Final = "ha_ios_nextalarm_refresh_start"
 
 STORAGE_VERSION: Final = 1
 STORAGE_KEY: Final = DOMAIN

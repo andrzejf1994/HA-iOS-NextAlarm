@@ -35,6 +35,11 @@
       "next_alarm_diagnostics": {
         "name": "Next alarm diagnostics"
       }
+    },
+    "binary_sensor": {
+      "refresh_problem": {
+        "name": "Refresh problem"
+      }
     }
   }
 }
