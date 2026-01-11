@@ -234,7 +234,7 @@ class NextAlarmCoordinator:
             return
         persons: dict[str, Any] = data.get("persons", {})
         for stored_slug, stored in persons.items():
-            slug = _person_slug(stored.get("person", stored_slug))
+            slug = stored_slug
             try:
                 state = PersonState.from_dict(slug, stored)
             except Exception as err:  # pragma: no cover - safety net
@@ -296,17 +296,23 @@ class NextAlarmCoordinator:
         if not person_raw:
             _LOGGER.warning("Received %s event without person", EVENT_NEXT_ALARM)
             return
+        person = str(person_raw)
         alarms = event.data.get("alarms")
         if not isinstance(alarms, dict):
             _LOGGER.warning("Event for %s does not contain alarm dictionary", person_raw)
             return
 
-        slug = _person_slug(str(person_raw))
+        slug = _person_slug(person)
         if slug not in self._person_states:
-            self._person_states[slug] = PersonState(slug=slug, person=str(person_raw))
+            for existing in self._person_states.values():
+                if existing.person == person:
+                    slug = existing.slug
+                    break
+        if slug not in self._person_states:
+            self._person_states[slug] = PersonState(slug=slug, person=person)
             self._notify_new_person(slug)
         state = self._person_states[slug]
-        state.person = str(person_raw)
+        state.person = person
 
         options = self._current_options()
         maps, map_errors = helpers.build_weekday_maps(
@@ -368,12 +374,18 @@ class NextAlarmCoordinator:
             _LOGGER.warning("Received %s event without person", EVENT_REFRESH_START)
             return
 
-        slug = _person_slug(str(person_raw))
+        person = str(person_raw)
+        slug = _person_slug(person)
         if slug not in self._person_states:
-            self._person_states[slug] = PersonState(slug=slug, person=str(person_raw))
+            for existing in self._person_states.values():
+                if existing.person == person:
+                    slug = existing.slug
+                    break
+        if slug not in self._person_states:
+            self._person_states[slug] = PersonState(slug=slug, person=person)
             self._notify_new_person(slug)
         state = self._person_states[slug]
-        state.person = str(person_raw)
+        state.person = person
 
         reference_now = event.time_fired or dt_util.utcnow()
         state.last_refresh_start = reference_now
