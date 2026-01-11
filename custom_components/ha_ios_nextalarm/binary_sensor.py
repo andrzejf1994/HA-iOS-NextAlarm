@@ -44,7 +44,9 @@ async def async_setup_entry(
     """Set up refresh problem binary sensors for a config entry."""
 
     coordinator: NextAlarmCoordinator = hass.data[DOMAIN][entry.entry_id]
-    created: set[str] = set()
+    created: set[str] = set(coordinator.person_states)
+    entities = [NextAlarmRefreshProblemBinarySensor(coordinator, slug) for slug in created]
+    async_add_entities(entities)
 
     def _ensure_person(slug: str) -> None:
         if slug in created:
@@ -69,7 +71,6 @@ class NextAlarmRefreshProblemBinarySensor(BinarySensorEntity):
         self._coordinator = coordinator
         self._slug = slug
         self._attr_unique_id = f"{coordinator.entry.entry_id}_{slug}_refresh_problem"
-        self._last_state: bool | None = None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -83,10 +84,7 @@ class NextAlarmRefreshProblemBinarySensor(BinarySensorEntity):
 
     @callback
     def _handle_update(self) -> None:
-        new_state = self.is_on
-        if new_state != self._last_state:
-            self._last_state = new_state
-            self.async_write_ha_state()
+        self.async_write_ha_state()
 
     @property
     def is_on(self) -> bool | None:

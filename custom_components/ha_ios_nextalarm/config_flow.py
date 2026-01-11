@@ -68,17 +68,21 @@ class NextAlarmOptionsFlow(config_entries.OptionsFlow):
 
         errors: dict[str, str] = {}
         current = dict(DEFAULT_OPTIONS)
-        current.update(self.config_entry.options)
+        current.update(self.config_entry.options or {})
 
-        form_locale = current[CONF_WEEKDAY_LOCALE]
-        form_map = current[CONF_WEEKDAY_CUSTOM_MAP]
+        form_locale = str(current.get(CONF_WEEKDAY_LOCALE, DEFAULT_OPTIONS[CONF_WEEKDAY_LOCALE]))
+        raw_map = current.get(CONF_WEEKDAY_CUSTOM_MAP, DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP])
+        form_map = raw_map if isinstance(raw_map, str) else DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP]
         maps_preview, _ = helpers.build_weekday_maps(form_map)
 
         if user_input is not None:
             form_locale = user_input[CONF_WEEKDAY_LOCALE]
-            form_map = user_input.get(
+            raw_form_map = user_input.get(
                 CONF_WEEKDAY_CUSTOM_MAP, DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP]
             )
+            form_map = raw_form_map if isinstance(raw_form_map, str) else DEFAULT_OPTIONS[
+                CONF_WEEKDAY_CUSTOM_MAP
+            ]
             maps_preview, map_errors = helpers.build_weekday_maps(form_map)
             if map_errors:
                 errors["base"] = "invalid_custom_map"

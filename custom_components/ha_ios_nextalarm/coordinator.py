@@ -37,6 +37,13 @@ from . import helpers
 _LOGGER = logging.getLogger(__name__)
 
 
+def _person_slug(person_raw: str) -> str:
+    """Normalize a person identifier for internal use."""
+
+    person = str(person_raw)
+    return slugify(person) or person.casefold()
+
+
 @dataclass
 class PersonState:
     """Runtime state for a person."""
@@ -159,6 +166,12 @@ class NextAlarmCoordinator:
 
         return list(self._person_states)
 
+    @property
+    def person_states(self) -> dict[str, PersonState]:
+        """Expose the current person states."""
+
+        return self._person_states
+
     def get_person_state(self, slug: str) -> PersonState | None:
         """Return the state for a given person."""
 
@@ -219,7 +232,8 @@ class NextAlarmCoordinator:
         if not data:
             return
         persons: dict[str, Any] = data.get("persons", {})
-        for slug, stored in persons.items():
+        for stored_slug, stored in persons.items():
+            slug = _person_slug(stored.get("person", stored_slug))
             try:
                 state = PersonState.from_dict(slug, stored)
             except Exception as err:  # pragma: no cover - safety net
@@ -275,7 +289,7 @@ class NextAlarmCoordinator:
             _LOGGER.warning("Event for %s does not contain alarm dictionary", person_raw)
             return
 
-        slug = slugify(str(person_raw)) or str(person_raw).strip().casefold()
+        slug = _person_slug(str(person_raw))
         if slug not in self._person_states:
             self._person_states[slug] = PersonState(slug=slug, person=str(person_raw))
             self._notify_new_person(slug)
@@ -342,7 +356,7 @@ class NextAlarmCoordinator:
             _LOGGER.warning("Received %s event without person", EVENT_REFRESH_START)
             return
 
-        slug = slugify(str(person_raw)) or str(person_raw).strip().casefold()
+        slug = _person_slug(str(person_raw))
         if slug not in self._person_states:
             self._person_states[slug] = PersonState(slug=slug, person=str(person_raw))
             self._notify_new_person(slug)
