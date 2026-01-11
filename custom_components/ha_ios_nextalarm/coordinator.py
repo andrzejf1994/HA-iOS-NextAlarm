@@ -22,6 +22,7 @@ except ImportError:  # pragma: no cover - fallback for older Home Assistant
     from homeassistant.util.slugify import slugify
 
 from .const import (
+    CONF_REFRESH_TIMEOUT,
     CONF_WEEKDAY_CUSTOM_MAP,
     CONF_WEEKDAY_LOCALE,
     DEFAULT_OPTIONS,
@@ -264,8 +265,19 @@ class NextAlarmCoordinator:
 
     def _current_options(self) -> dict[str, Any]:
         options = dict(DEFAULT_OPTIONS)
-        options.update(self.entry.options)
+        entry_options = self.entry.options
+        if isinstance(entry_options, dict):
+            options.update(entry_options)
         return options
+
+    def _refresh_timeout_seconds(self) -> int:
+        options = self._current_options()
+        raw_timeout = options.get(CONF_REFRESH_TIMEOUT, DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT])
+        try:
+            timeout = int(raw_timeout)
+        except (TypeError, ValueError):
+            return DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT]
+        return timeout if timeout >= 1 else DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT]
 
     async def _async_handle_event(self, event: Event) -> None:
         """Handle an incoming NextAlarm event."""
@@ -446,9 +458,11 @@ class NextAlarmCoordinator:
         return {"persons": {slug: state.as_dict() for slug, state in self._person_states.items()}}
 
     def _schedule_refresh_timeout(self, state: PersonState, token: str) -> None:
+        timeout = self._refresh_timeout_seconds()
         _LOGGER.debug(
-            "Scheduling refresh timeout for %s in 20s (token=%s)",
+            "Scheduling refresh timeout for %s in %ss (token=%s)",
             state.person,
+            timeout,
             token,
         )
 
@@ -460,7 +474,7 @@ class NextAlarmCoordinator:
                 )
             )
 
-        state.refresh_timer_cancel = async_call_later(self.hass, 20, _fire)
+        state.refresh_timer_cancel = async_call_later(self.hass, timeout, _fire)
 
     def _cancel_refresh_timer(self, state: PersonState) -> None:
         if state.refresh_timer_cancel:

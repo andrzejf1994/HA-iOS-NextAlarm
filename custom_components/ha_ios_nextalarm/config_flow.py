@@ -11,6 +11,7 @@ from homeassistant.data_entry_flow import FlowResult  # Import FlowResult for HA
 from homeassistant.core import callback
 
 from .const import (
+    CONF_REFRESH_TIMEOUT,
     CONF_WEEKDAY_CUSTOM_MAP,
     CONF_WEEKDAY_LOCALE,
     DEFAULT_OPTIONS,
@@ -68,29 +69,65 @@ class NextAlarmOptionsFlow(config_entries.OptionsFlow):
 
         errors: dict[str, str] = {}
         current = dict(DEFAULT_OPTIONS)
-        current.update(self.config_entry.options or {})
+        options = self.config_entry.options
+        if isinstance(options, dict):
+            current.update(options)
 
-        form_locale = str(current.get(CONF_WEEKDAY_LOCALE, DEFAULT_OPTIONS[CONF_WEEKDAY_LOCALE]))
-        raw_map = current.get(CONF_WEEKDAY_CUSTOM_MAP, DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP])
-        form_map = raw_map if isinstance(raw_map, str) else DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP]
+        def _option_str(value: Any, default: str) -> str:
+            return value if isinstance(value, str) else default
+
+        def _option_int(value: Any, default: int) -> int:
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                return default
+            return parsed if parsed >= 1 else default
+
+        form_locale = _option_str(
+            current.get(CONF_WEEKDAY_LOCALE),
+            DEFAULT_OPTIONS[CONF_WEEKDAY_LOCALE],
+        )
+        form_map = _option_str(
+            current.get(CONF_WEEKDAY_CUSTOM_MAP),
+            DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP],
+        )
+        form_timeout = _option_int(
+            current.get(CONF_REFRESH_TIMEOUT),
+            DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT],
+        )
         maps_preview, _ = helpers.build_weekday_maps(form_map)
 
         if user_input is not None:
-            form_locale = user_input[CONF_WEEKDAY_LOCALE]
-            raw_form_map = user_input.get(
-                CONF_WEEKDAY_CUSTOM_MAP, DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP]
+            form_locale = _option_str(
+                user_input.get(CONF_WEEKDAY_LOCALE),
+                DEFAULT_OPTIONS[CONF_WEEKDAY_LOCALE],
             )
-            form_map = raw_form_map if isinstance(raw_form_map, str) else DEFAULT_OPTIONS[
-                CONF_WEEKDAY_CUSTOM_MAP
-            ]
+            form_map = _option_str(
+                user_input.get(CONF_WEEKDAY_CUSTOM_MAP),
+                DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP],
+            )
+            timeout_input = user_input.get(CONF_REFRESH_TIMEOUT, form_timeout)
+            timeout_valid = True
+            try:
+                timeout_value = int(timeout_input)
+            except (TypeError, ValueError):
+                timeout_valid = False
+            else:
+                if timeout_value < 1:
+                    timeout_valid = False
+            if not timeout_valid:
+                errors[CONF_REFRESH_TIMEOUT] = "invalid_refresh_timeout"
+                timeout_value = form_timeout
+
             maps_preview, map_errors = helpers.build_weekday_maps(form_map)
             if map_errors:
                 errors["base"] = "invalid_custom_map"
-            else:
+            if not errors:
                 return self.async_create_entry(
                     data={
                         CONF_WEEKDAY_LOCALE: form_locale,
                         CONF_WEEKDAY_CUSTOM_MAP: form_map,
+                        CONF_REFRESH_TIMEOUT: timeout_value,
                     }
                 )
 
@@ -103,6 +140,10 @@ class NextAlarmOptionsFlow(config_entries.OptionsFlow):
                     CONF_WEEKDAY_CUSTOM_MAP,
                     default=form_map,
                 ): str,
+                vol.Required(CONF_REFRESH_TIMEOUT, default=form_timeout): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=1),
+                ),
             }
         )
 
