@@ -13,7 +13,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers.event import async_call_later, async_track_point_in_time
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 try:  # Home Assistant 2023.12+
@@ -370,7 +370,7 @@ class NextAlarmCoordinator:
         state.refresh_problem = False
         token = uuid.uuid4().hex
         state.refresh_timeout_token = token
-        self._schedule_refresh_timeout(state, reference_now, token)
+        self._schedule_refresh_timeout(state, token)
 
         await self._store.async_save(self._storage_payload())
         _LOGGER.debug("Processed refresh start event for %s", state.person)
@@ -445,17 +445,13 @@ class NextAlarmCoordinator:
     def _storage_payload(self) -> dict[str, Any]:
         return {"persons": {slug: state.as_dict() for slug, state in self._person_states.items()}}
 
-    def _schedule_refresh_timeout(
-        self, state: PersonState, reference_now: datetime, token: str
-    ) -> None:
-        def _fire(now: datetime) -> None:
+    def _schedule_refresh_timeout(self, state: PersonState, token: str) -> None:
+        def _fire() -> None:
             self.hass.async_create_task(
-                self._async_mark_refresh_timeout(state.slug, now, token)
+                self._async_mark_refresh_timeout(state.slug, dt_util.utcnow(), token)
             )
 
-        state.refresh_timer_cancel = async_track_point_in_time(
-            self.hass, _fire, reference_now + timedelta(seconds=20)
-        )
+        state.refresh_timer_cancel = async_call_later(self.hass, 20, _fire)
 
     def _cancel_refresh_timer(self, state: PersonState) -> None:
         if state.refresh_timer_cancel:
@@ -468,6 +464,12 @@ class NextAlarmCoordinator:
         state = self._person_states.get(slug)
         if not state:
             return
+        _LOGGER.debug(
+            "Refresh timeout fired for %s (token=%s, current=%s)",
+            state.person,
+            token,
+            state.refresh_timeout_token,
+        )
         if state.refresh_timeout_token != token:
             return
         state.refresh_timer_cancel = None
