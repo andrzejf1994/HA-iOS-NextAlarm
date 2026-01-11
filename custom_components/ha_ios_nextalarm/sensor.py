@@ -70,7 +70,11 @@ async def async_setup_entry(
     """Set up NextAlarm sensors for a config entry."""
 
     coordinator: NextAlarmCoordinator = hass.data[DOMAIN][entry.entry_id]
-    created: set[str] = set()
+    created: set[str] = set(coordinator.person_states)
+    initial_entities = [
+        NextAlarmSensor(coordinator, slug) for slug in created
+    ] + [NextAlarmDiagnosticsSensor(coordinator, slug) for slug in created]
+    async_add_entities(initial_entities)
 
     def _ensure_person(slug: str) -> None:
         if slug in created:
@@ -110,6 +114,7 @@ class NextAlarmSensor(RestoreEntity, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        _async_update_device_registry(self.hass, self._coordinator, self._slug)
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass, self._coordinator.signal_person(self._slug), self._handle_update
@@ -119,7 +124,6 @@ class NextAlarmSensor(RestoreEntity, SensorEntity):
 
     @callback
     def _handle_update(self) -> None:
-        _async_update_device_registry(self.hass, self._coordinator, self._slug)
         self.async_write_ha_state()
 
     @property
@@ -215,6 +219,7 @@ class NextAlarmDiagnosticsSensor(RestoreEntity, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        _async_update_device_registry(self.hass, self._coordinator, self._slug)
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass, self._coordinator.signal_person(self._slug), self._handle_update
@@ -224,7 +229,6 @@ class NextAlarmDiagnosticsSensor(RestoreEntity, SensorEntity):
 
     @callback
     def _handle_update(self) -> None:
-        _async_update_device_registry(self.hass, self._coordinator, self._slug)
         self.async_write_ha_state()
 
     @property
