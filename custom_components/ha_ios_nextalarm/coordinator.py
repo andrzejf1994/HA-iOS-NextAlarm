@@ -446,9 +446,13 @@ class NextAlarmCoordinator:
         return {"persons": {slug: state.as_dict() for slug, state in self._person_states.items()}}
 
     def _schedule_refresh_timeout(self, state: PersonState, token: str) -> None:
-        def _fire() -> None:
+        _LOGGER.debug(
+            "Scheduling refresh timeout for %s in 20s (token=%s)", state.person, token
+        )
+
+        def _fire(now: datetime) -> None:
             self.hass.async_create_task(
-                self._async_mark_refresh_timeout(state.slug, dt_util.utcnow(), token)
+                self._async_mark_refresh_timeout(state.slug, now, token)
             )
 
         state.refresh_timer_cancel = async_call_later(self.hass, 20, _fire)
