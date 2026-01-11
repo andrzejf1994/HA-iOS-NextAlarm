@@ -447,12 +447,17 @@ class NextAlarmCoordinator:
 
     def _schedule_refresh_timeout(self, state: PersonState, token: str) -> None:
         _LOGGER.debug(
-            "Scheduling refresh timeout for %s in 20s (token=%s)", state.person, token
+            "Scheduling refresh timeout for %s in 20s (token=%s)",
+            state.person,
+            token,
         )
 
-        def _fire(now: datetime) -> None:
+        @callback
+        def _fire(*_args) -> None:
             self.hass.async_create_task(
-                self._async_mark_refresh_timeout(state.slug, now, token)
+                self._async_mark_refresh_timeout(
+                    state.slug, dt_util.utcnow(), token
+                )
             )
 
         state.refresh_timer_cancel = async_call_later(self.hass, 20, _fire)
@@ -468,17 +473,21 @@ class NextAlarmCoordinator:
         state = self._person_states.get(slug)
         if not state:
             return
+
         _LOGGER.debug(
             "Refresh timeout fired for %s (token=%s, current=%s)",
             state.person,
             token,
             state.refresh_timeout_token,
         )
+
         if state.refresh_timeout_token != token:
             return
+
         state.refresh_timer_cancel = None
         state.refresh_problem = True
         state.refresh_timeout_token = None
         await self._store.async_save(self._storage_payload())
+
         _LOGGER.debug("Refresh timeout marked for %s at %s", state.person, trigger_time)
         self._notify_person_update(slug)
