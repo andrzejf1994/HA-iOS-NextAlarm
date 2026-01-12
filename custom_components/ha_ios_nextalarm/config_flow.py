@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import voluptuous as vol
@@ -19,6 +20,8 @@ from .const import (
     OPTION_WEEKDAY_LOCALES,
 )
 from . import helpers
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class NextAlarmConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -95,7 +98,11 @@ class NextAlarmOptionsFlow(config_entries.OptionsFlow):
             current.get(CONF_REFRESH_TIMEOUT),
             DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT],
         )
-        maps_preview, _ = helpers.build_weekday_maps(form_map)
+        try:
+            maps_preview, _ = helpers.build_weekday_maps(form_map)
+        except Exception as err:  # pragma: no cover - defensive against malformed data
+            _LOGGER.debug("Options preview map parsing failed: %s", err)
+            maps_preview, _ = helpers.build_weekday_maps(DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP])
 
         if user_input is not None:
             form_locale = _option_str(
@@ -119,7 +126,14 @@ class NextAlarmOptionsFlow(config_entries.OptionsFlow):
                 errors[CONF_REFRESH_TIMEOUT] = "invalid_refresh_timeout"
                 timeout_value = form_timeout
 
-            maps_preview, map_errors = helpers.build_weekday_maps(form_map)
+            try:
+                maps_preview, map_errors = helpers.build_weekday_maps(form_map)
+            except Exception as err:  # pragma: no cover - defensive against malformed data
+                _LOGGER.debug("Options map parsing failed: %s", err)
+                maps_preview, map_errors = helpers.build_weekday_maps(
+                    DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP]
+                )
+                errors["base"] = "invalid_custom_map"
             if map_errors:
                 errors["base"] = "invalid_custom_map"
             if not errors:

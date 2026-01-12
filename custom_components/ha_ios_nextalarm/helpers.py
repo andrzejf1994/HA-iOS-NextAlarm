@@ -46,13 +46,17 @@ class NormalizedAlarm:
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "NormalizedAlarm":
         """Deserialize an alarm from storage."""
-
-        base_time_str = data["base_time"]
-        base_time = dt_util.parse_datetime(base_time_str)
+        base_time_raw = data.get("base_time")
+        if isinstance(base_time_raw, datetime):
+            base_time = base_time_raw
+        elif isinstance(base_time_raw, str):
+            base_time = dt_util.parse_datetime(base_time_raw)
+        else:
+            base_time = None
         if base_time is None:
-            raise ValueError(f"Invalid datetime stored: {base_time_str}")
+            raise ValueError(f"Invalid datetime stored: {base_time_raw}")
         return cls(
-            key=str(data["key"]),
+            key=str(data.get("key", "")),
             label=str(data.get("label", "")),
             enabled=bool(data.get("enabled", False)),
             repeat=bool(data.get("repeat", False)),

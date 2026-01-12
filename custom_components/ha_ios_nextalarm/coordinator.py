@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, tzinfo  # Import tzinfo for explicit return typing.
 import logging
@@ -32,10 +32,148 @@ from .const import (
     SIGNAL_PERSON_UPDATED,
     STORAGE_KEY,
     STORAGE_VERSION,
+    STR_ONOFF,
 )
 from . import helpers
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _log_restore_field_error(
+    person: str,
+    slug: str,
+    field: str,
+    raw_value: Any,
+    error: str | Exception,
+) -> None:
+    _LOGGER.debug(
+        "Restore field failed: person=%s, slug=%s, field=%s, raw_value=%r, type=%s, error=%s",
+        person,
+        slug,
+        field,
+        raw_value,
+        type(raw_value),
+        error,
+    )
+
+
+def _restore_str(
+    person: str,
+    slug: str,
+    field: str,
+    raw_value: Any,
+    default: str | None,
+) -> str | None:
+    if raw_value is None:
+        return default
+    if isinstance(raw_value, str):
+        return raw_value
+    _log_restore_field_error(person, slug, field, raw_value, "expected str or None")
+    return default
+
+
+def _restore_list(
+    person: str,
+    slug: str,
+    field: str,
+    raw_value: Any,
+    default: list[Any],
+) -> list[Any]:
+    if raw_value is None:
+        return list(default)
+    if isinstance(raw_value, list):
+        return list(raw_value)
+    if isinstance(raw_value, tuple):
+        return list(raw_value)
+    _log_restore_field_error(person, slug, field, raw_value, "expected list or tuple")
+    return list(default)
+
+
+def _restore_mapping(
+    person: str,
+    slug: str,
+    field: str,
+    raw_value: Any,
+    default: Mapping[str, Any],
+) -> dict[str, Any]:
+    if raw_value is None:
+        return dict(default)
+    if isinstance(raw_value, Mapping):
+        return dict(raw_value)
+    _log_restore_field_error(person, slug, field, raw_value, "expected mapping")
+    return dict(default)
+
+
+def _restore_datetime(
+    person: str,
+    slug: str,
+    field: str,
+    raw_value: Any,
+) -> datetime | None:
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, datetime):
+        return raw_value
+    if isinstance(raw_value, str):
+        parsed = dt_util.parse_datetime(raw_value)
+        if parsed is None:
+            _log_restore_field_error(
+                person,
+                slug,
+                field,
+                raw_value,
+                "unparseable datetime string",
+            )
+        return parsed
+    _log_restore_field_error(person, slug, field, raw_value, "expected str or datetime")
+    return None
+
+
+def _restore_int(
+    person: str,
+    slug: str,
+    field: str,
+    raw_value: Any,
+    default: int,
+) -> int:
+    if raw_value is None:
+        return default
+    if isinstance(raw_value, bool):
+        _log_restore_field_error(person, slug, field, raw_value, "expected int")
+        return default
+    if isinstance(raw_value, int):
+        return raw_value
+    if isinstance(raw_value, str):
+        try:
+            return int(raw_value)
+        except ValueError as err:
+            _log_restore_field_error(person, slug, field, raw_value, err)
+            return default
+    _log_restore_field_error(person, slug, field, raw_value, "expected int or str")
+    return default
+
+
+def _restore_bool(
+    person: str,
+    slug: str,
+    field: str,
+    raw_value: Any,
+    default: bool,
+) -> bool:
+    if raw_value is None:
+        return default
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip().casefold()
+        if normalized in STR_ONOFF:
+            return STR_ONOFF[normalized]
+        if normalized in {"true", "false"}:
+            return normalized == "true"
+        _log_restore_field_error(person, slug, field, raw_value, "invalid boolean string")
+        return default
+    _log_restore_field_error(person, slug, field, raw_value, "expected bool or str")
+    return default
 
 
 def _person_slug(person_raw: str) -> str:
@@ -111,35 +249,198 @@ class PersonState:
     @classmethod
     def from_dict(cls, slug: str, data: dict[str, Any]) -> "PersonState":
         """Restore a person state from storage."""
-
-        normalized_alarms = {
-            key: helpers.NormalizedAlarm.from_dict(value)
-            for key, value in data.get("normalized_alarms", {}).items()
-        }
-        last_event_time = dt_util.parse_datetime(data.get("last_event_time"))
-        next_alarm_time = dt_util.parse_datetime(data.get("next_alarm_time"))
-        previous_alarm_time = dt_util.parse_datetime(data.get("previous_alarm_time"))
-        last_refresh_start = dt_util.parse_datetime(data.get("last_refresh_start"))
-        last_refresh_end = dt_util.parse_datetime(data.get("last_refresh_end"))
+        person = _restore_str(slug, slug, "person", data.get("person"), slug) or slug
+        normalized_alarms: dict[str, helpers.NormalizedAlarm] = {}
+        raw_alarms = _restore_mapping(person, slug, "normalized_alarms", data.get("normalized_alarms"), {})
+        for alarm_key, alarm_data in raw_alarms.items():
+            field_prefix = f"normalized_alarms.{alarm_key}"
+            if not isinstance(alarm_data, Mapping):
+                _log_restore_field_error(
+                    person,
+                    slug,
+                    field_prefix,
+                    alarm_data,
+                    "expected mapping",
+                )
+                continue
+            base_time = _restore_datetime(
+                person,
+                slug,
+                f"{field_prefix}.base_time",
+                alarm_data.get("base_time"),
+            )
+            if base_time is None:
+                _log_restore_field_error(
+                    person,
+                    slug,
+                    f"{field_prefix}.base_time",
+                    alarm_data.get("base_time"),
+                    "missing or invalid base_time",
+                )
+                continue
+            alarm_payload = {
+                "key": _restore_str(
+                    person,
+                    slug,
+                    f"{field_prefix}.key",
+                    alarm_data.get("key"),
+                    str(alarm_key),
+                )
+                or str(alarm_key),
+                "label": _restore_str(
+                    person,
+                    slug,
+                    f"{field_prefix}.label",
+                    alarm_data.get("label"),
+                    "",
+                )
+                or "",
+                "enabled": _restore_bool(
+                    person,
+                    slug,
+                    f"{field_prefix}.enabled",
+                    alarm_data.get("enabled"),
+                    False,
+                ),
+                "repeat": _restore_bool(
+                    person,
+                    slug,
+                    f"{field_prefix}.repeat",
+                    alarm_data.get("repeat"),
+                    False,
+                ),
+                "snooze": _restore_bool(
+                    person,
+                    slug,
+                    f"{field_prefix}.snooze",
+                    alarm_data.get("snooze"),
+                    False,
+                ),
+                "base_time": base_time,
+                "repeat_days_localized": _restore_list(
+                    person,
+                    slug,
+                    f"{field_prefix}.repeat_days_localized",
+                    alarm_data.get("repeat_days_localized"),
+                    [],
+                ),
+                "repeat_days_normalized": _restore_list(
+                    person,
+                    slug,
+                    f"{field_prefix}.repeat_days_normalized",
+                    alarm_data.get("repeat_days_normalized"),
+                    [],
+                ),
+            }
+            try:
+                normalized_alarms[str(alarm_key)] = helpers.NormalizedAlarm.from_dict(
+                    alarm_payload
+                )
+            except Exception as err:  # pragma: no cover - safety net
+                _log_restore_field_error(person, slug, field_prefix, alarm_payload, err)
+        last_event_time = _restore_datetime(
+            person,
+            slug,
+            "last_event_time",
+            data.get("last_event_time"),
+        )
+        next_alarm_time = _restore_datetime(
+            person,
+            slug,
+            "next_alarm_time",
+            data.get("next_alarm_time"),
+        )
+        previous_alarm_time = _restore_datetime(
+            person,
+            slug,
+            "previous_alarm_time",
+            data.get("previous_alarm_time"),
+        )
+        last_refresh_start = _restore_datetime(
+            person,
+            slug,
+            "last_refresh_start",
+            data.get("last_refresh_start"),
+        )
+        last_refresh_end = _restore_datetime(
+            person,
+            slug,
+            "last_refresh_end",
+            data.get("last_refresh_end"),
+        )
         schedule: dict[str, datetime | None] = {}
-        for key, value in data.get("schedule", {}).items():
-            schedule[key] = dt_util.parse_datetime(value) if value else None
+        raw_schedule = _restore_mapping(person, slug, "schedule", data.get("schedule"), {})
+        for key, value in raw_schedule.items():
+            if not isinstance(key, str):
+                _log_restore_field_error(person, slug, "schedule", key, "expected str key")
+                continue
+            schedule[key] = _restore_datetime(
+                person,
+                slug,
+                f"schedule.{key}",
+                value,
+            )
+        raw_event = data.get("raw_event")
+        if raw_event is None:
+            raw_event_value = None
+        elif isinstance(raw_event, Mapping):
+            raw_event_value = dict(raw_event)
+        else:
+            _log_restore_field_error(person, slug, "raw_event", raw_event, "expected mapping")
+            raw_event_value = None
+
         return cls(
             slug=slug,
-            person=str(data.get("person", slug)),
+            person=person,
             normalized_alarms=normalized_alarms,
-            parse_errors=list(data.get("parse_errors", [])),
-            map_errors=list(data.get("map_errors", [])),
-            map_locale=data.get("map_locale"),
+            parse_errors=_restore_list(
+                person,
+                slug,
+                "parse_errors",
+                data.get("parse_errors"),
+                [],
+            ),
+            map_errors=_restore_list(
+                person,
+                slug,
+                "map_errors",
+                data.get("map_errors"),
+                [],
+            ),
+            map_locale=_restore_str(
+                person,
+                slug,
+                "map_locale",
+                data.get("map_locale"),
+                None,
+            ),
             last_event_time=last_event_time,
-            raw_event=data.get("raw_event"),
-            next_alarm_key=data.get("next_alarm_key"),
+            raw_event=raw_event_value,
+            next_alarm_key=_restore_str(
+                person,
+                slug,
+                "next_alarm_key",
+                data.get("next_alarm_key"),
+                None,
+            ),
             next_alarm_time=next_alarm_time,
-            previous_alarm_key=data.get("previous_alarm_key"),
+            previous_alarm_key=_restore_str(
+                person,
+                slug,
+                "previous_alarm_key",
+                data.get("previous_alarm_key"),
+                None,
+            ),
             previous_alarm_time=previous_alarm_time,
-            note=data.get("note"),
+            note=_restore_str(person, slug, "note", data.get("note"), None),
             schedule=schedule,
-            map_version=int(data.get("map_version", MAP_VERSION)),
+            map_version=_restore_int(
+                person,
+                slug,
+                "map_version",
+                data.get("map_version"),
+                MAP_VERSION,
+            ),
             last_refresh_start=last_refresh_start,
             last_refresh_end=last_refresh_end,
             refresh_problem=False,
@@ -232,14 +533,26 @@ class NextAlarmCoordinator:
         data = await self._store.async_load()
         if not data:
             return
-        persons: dict[str, Any] = data.get("persons", {})
+        if not isinstance(data, dict):
+            _LOGGER.warning("Stored NextAlarm data is not a dictionary; skipping restore")
+            return
+        persons = data.get("persons", {})
+        if not isinstance(persons, dict):
+            _LOGGER.warning("Stored NextAlarm persons data is not a dictionary; skipping restore")
+            return
         for stored_slug, stored in persons.items():
             slug = stored_slug
             _LOGGER.debug(
                 "Restoring person from storage: stored_slug=%s, stored_person=%s",
                 stored_slug,
-                stored.get("person"),
+                stored.get("person") if isinstance(stored, dict) else None,
             )
+            if not isinstance(stored, dict):
+                _LOGGER.warning(
+                    "Skipping restore for %s because stored entry is not a dictionary",
+                    stored_slug,
+                )
+                continue
             try:
                 state = PersonState.from_dict(slug, stored)
             except Exception as err:  # pragma: no cover - safety net
@@ -288,13 +601,8 @@ class NextAlarmCoordinator:
             timeout = int(raw_timeout)
         except (TypeError, ValueError):
             timeout = DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT]
-            _LOGGER.debug(
-                "Resolved refresh timeout option: raw=%s, effective=%ss",
-                raw_timeout,
-                timeout,
-            )
-            return timeout
-        timeout = timeout if timeout >= 1 else DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT]
+        else:
+            timeout = timeout if timeout >= 1 else DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT]
         _LOGGER.debug(
             "Resolved refresh timeout option: raw=%s, effective=%ss",
             raw_timeout,
