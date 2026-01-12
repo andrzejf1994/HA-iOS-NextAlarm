@@ -27,9 +27,18 @@ HA iOS Next Alarm is a custom integration for Home Assistant that exposes the ne
 2. During the import you will be prompted to provide your name exactly as it appears in Home Assistant and to choose the Home Assistant server the shortcut should call.
 3. Allow the shortcut to access the Home Assistant instance defined in the integration configuration.
 
-> **⚠️ Important warning about Apple Shortcuts**
+> ⚠️ **Important warning about Apple Shortcuts bug**
 >
-> Apple currently has a bug that affects the shortcut when an alarm is configured to repeat on only a single day of the week. In this case the shortcut fails with an error and does not complete. As a workaround you can either delete that alarm, disable repeating for it, or add at least one more day to its repeat schedule. Advanced users can alternatively edit the shortcut and remove the `Repeat Days` key from the dictionary at the very bottom, but doing so means repeating alarms will only refresh after the shortcut runs again.
+> Apple currently has a **confirmed bug in the Shortcuts app** that breaks this integration when an alarm in the iOS Clock app is configured to repeat on **only one day of the week**.
+>
+> When such an alarm exists, the shortcut crashes and does not return any data to Home Assistant. As a result, the integration may report refresh errors or stale data.
+>
+> 👉 **To fix the problem:**
+> - Remove repeating from that alarm **or**
+> - Set the alarm to repeat on **at least two days of the week**.
+>
+> A detailed technical explanation of the bug, including Apple and community references, is available here:  
+> **[Apple Shortcuts single-day repeat bug – full explanation](docs/apple-shortcuts-single-day-repeat-bug.md)**
 
 ## Recommended automations
 
@@ -42,6 +51,8 @@ The more frequently the shortcut runs, the more accurate your next alarm sensor 
 
 ## Usage
 
-Once configured, the integration provides a sensor entity named `sensor.<device_name>_next_alarm`. You can reference it in automations, scripts, or dashboards to trigger routines before your alarm rings. If no alarm is currently enabled on the device, the sensor state is reported as `unknown`.
+Once configured, the integration provides a sensor entity named:
 
-If you encounter issues or have feature requests, please open an issue in the [GitHub repository](https://github.com/andrzejf1994/HA-iOS-NextAlarm).
+sensor.<device_name>_next_alarm
+
+You can reference it in automations, scripts, or dashboards to trigger routines before your alarm rings. If no alarm is currently enabled on the device, the sensor state is reported as `unknown`.
