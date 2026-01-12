@@ -74,9 +74,9 @@ action:
           - repeat:
               for_each: "{{ mobile_targets }}"
               sequence:
-                - device_id: "{{ repeat.item }}"
-                  domain: mobile_app
+                - domain: mobile_app
                   type: notify
+                  device_id: !lambda "return repeat.item"
                   title: "NextAlarm"
                   message: !input notification_message
                   data:
