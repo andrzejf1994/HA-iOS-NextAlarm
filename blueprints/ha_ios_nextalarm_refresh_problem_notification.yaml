@@ -79,8 +79,8 @@ action:
               data:
                 subtitle: "{{ person }}"
                 subject: "{{ person }}"
-                url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm"
-                clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm"
+                url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
+                clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
 
       # Case 2: No devices selected → use custom notify service
       - conditions:
@@ -94,5 +94,5 @@ action:
               data:
                 subtitle: "{{ person }}"
                 subject: "{{ person }}"
-                url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm"
-                clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm"
+                url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
+                clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
