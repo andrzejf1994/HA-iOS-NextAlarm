@@ -2,7 +2,7 @@ blueprint:
   name: iOS NextAlarm – Refresh problem notification
   description: >
     Sends a notification when a refresh problem is detected in the
-    HA iOS NextAlarm integration.
+    HA iOS NextAlarm integration and clears it when the problem is resolved.
     Documentation: https://github.com/andrzejf1994/HA-iOS-NextAlarm
   domain: automation
 
@@ -53,20 +53,30 @@ blueprint:
           multiline: true
 
 trigger:
+  # Problem detected
   - platform: state
     entity_id: !input problem_entities
     from: "off"
     to: "on"
+
+  # Problem resolved → clear notification
+  - platform: state
+    entity_id: !input problem_entities
+    from: "on"
+    to: "off"
 
 action:
   - variables:
       person: "{{ trigger.to_state.attributes.source_person | default('Unknown') }}"
       mobile_targets: !input mobile_devices
       notify_target: !input notify_service
+      is_problem: "{{ trigger.to_state.state == 'on' }}"
 
   - choose:
 
-      # --- CASE 1: Mobile devices selected -> dynamic notify.mobile_app_<device>
+      ######################################################################
+      # CASE A: Mobile devices selected
+      ######################################################################
       - conditions:
           - condition: template
             value_template: "{{ mobile_targets | count > 0 }}"
@@ -74,27 +84,71 @@ action:
           - repeat:
               for_each: !input mobile_devices
               sequence:
-                - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
-                  data:
-                    title: "NextAlarm"
-                    message: !input notification_message
-                    data:
-                      subtitle: "{{ person }}"
-                      subject: "{{ person }}"
-                      url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
-                      clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
 
-      # --- CASE 2: No devices selected -> use custom notify service
+                # --- A1: Problem ON → send notification
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ is_problem }}"
+                      sequence:
+                        - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                          data:
+                            title: "NextAlarm"
+                            message: !input notification_message
+                            data:
+                              subtitle: "{{ person }}"
+                              subject: "{{ person }}"
+                              group: "ha_ios_nextalarm"
+                              tag: "ha_ios_nextalarm_{{ person }}"
+                              url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
+                              clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
+
+                # --- A2: Problem OFF → clear notification by tag
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ not is_problem }}"
+                      sequence:
+                        - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                          data:
+                            message: "clear_notification"
+                            data:
+                              tag: "ha_ios_nextalarm_{{ person }}"
+
+      ######################################################################
+      # CASE B: No mobile devices selected → use custom notify service
+      ######################################################################
       - conditions:
           - condition: template
             value_template: "{{ mobile_targets | count == 0 }}"
         sequence:
-          - service: "{{ notify_target }}"
-            data:
-              title: "NextAlarm"
-              message: !input notification_message
-              data:
-                subtitle: "{{ person }}"
-                subject: "{{ person }}"
-                url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
-                clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
+
+          # --- B1: Problem ON → send notification
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ is_problem }}"
+                sequence:
+                  - service: "{{ notify_target }}"
+                    data:
+                      title: "NextAlarm"
+                      message: !input notification_message
+                      data:
+                        subtitle: "{{ person }}"
+                        subject: "{{ person }}"
+                        group: "ha_ios_nextalarm"
+                        tag: "ha_ios_nextalarm_{{ person }}"
+                        url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
+                        clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
+
+          # --- B2: Problem OFF → clear notification by tag
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ not is_problem }}"
+                sequence:
+                  - service: "{{ notify_target }}"
+                    data:
+                      message: "clear_notification"
+                      data:
+                        tag: "ha_ios_nextalarm_{{ person }}"
