@@ -235,6 +235,11 @@ class NextAlarmCoordinator:
         persons: dict[str, Any] = data.get("persons", {})
         for stored_slug, stored in persons.items():
             slug = stored_slug
+            _LOGGER.debug(
+                "Restoring person from storage: stored_slug=%s, stored_person=%s",
+                stored_slug,
+                stored.get("person"),
+            )
             try:
                 state = PersonState.from_dict(slug, stored)
             except Exception as err:  # pragma: no cover - safety net
@@ -254,6 +259,12 @@ class NextAlarmCoordinator:
             else:
                 self._refresh_schedule(state, reference_time=reference_now)
             self._schedule_rollover(state)
+            _LOGGER.debug(
+                "Restored state: slug=%s, person=%s, next_alarm_time=%s",
+                slug,
+                state.person,
+                state.next_alarm_time,
+            )
 
     @property
     def _timezone(self) -> tzinfo:
@@ -276,8 +287,20 @@ class NextAlarmCoordinator:
         try:
             timeout = int(raw_timeout)
         except (TypeError, ValueError):
-            return DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT]
-        return timeout if timeout >= 1 else DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT]
+            timeout = DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT]
+            _LOGGER.debug(
+                "Resolved refresh timeout option: raw=%s, effective=%ss",
+                raw_timeout,
+                timeout,
+            )
+            return timeout
+        timeout = timeout if timeout >= 1 else DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT]
+        _LOGGER.debug(
+            "Resolved refresh timeout option: raw=%s, effective=%ss",
+            raw_timeout,
+            timeout,
+        )
+        return timeout
 
     async def _async_handle_event(self, event: Event) -> None:
         """Handle an incoming NextAlarm event."""
@@ -296,6 +319,7 @@ class NextAlarmCoordinator:
         if not person_raw:
             _LOGGER.warning("Received %s event without person", EVENT_NEXT_ALARM)
             return
+        _LOGGER.debug("Incoming EVENT_NEXT_ALARM for person_raw=%s", person_raw)
         person = str(person_raw)
         alarms = event.data.get("alarms")
         if not isinstance(alarms, dict):
@@ -303,12 +327,19 @@ class NextAlarmCoordinator:
             return
 
         slug = _person_slug(person)
+        _LOGGER.debug("Derived slug=%s for person=%s", slug, person)
         if slug not in self._person_states:
             for existing in self._person_states.values():
                 if existing.person == person:
+                    _LOGGER.debug(
+                        "Remapped incoming person %s to existing slug=%s",
+                        person,
+                        existing.slug,
+                    )
                     slug = existing.slug
                     break
         if slug not in self._person_states:
+            _LOGGER.debug("Creating new PersonState: slug=%s, person=%s", slug, person)
             self._person_states[slug] = PersonState(slug=slug, person=person)
             self._notify_new_person(slug)
         state = self._person_states[slug]
@@ -358,6 +389,12 @@ class NextAlarmCoordinator:
             "data": helpers.ensure_serializable(event.data),
             "time_fired": reference_now.isoformat(),  # Persist the firing time for traceability.
         }
+        _LOGGER.debug(
+            "Updated state for %s: next_alarm_time=%s, map_version=%s",
+            state.person,
+            state.next_alarm_time,
+            state.map_version,
+        )
 
         self._schedule_rollover(state)
         await self._store.async_save(self._storage_payload())
@@ -374,14 +411,22 @@ class NextAlarmCoordinator:
             _LOGGER.warning("Received %s event without person", EVENT_REFRESH_START)
             return
 
+        _LOGGER.debug("EVENT_REFRESH_START received for person_raw=%s", person_raw)
         person = str(person_raw)
         slug = _person_slug(person)
+        _LOGGER.debug("Refresh start mapped to slug=%s for person=%s", slug, person)
         if slug not in self._person_states:
             for existing in self._person_states.values():
                 if existing.person == person:
+                    _LOGGER.debug(
+                        "Remapped incoming person %s to existing slug=%s",
+                        person,
+                        existing.slug,
+                    )
                     slug = existing.slug
                     break
         if slug not in self._person_states:
+            _LOGGER.debug("Creating new PersonState: slug=%s, person=%s", slug, person)
             self._person_states[slug] = PersonState(slug=slug, person=person)
             self._notify_new_person(slug)
         state = self._person_states[slug]
@@ -394,6 +439,12 @@ class NextAlarmCoordinator:
         state.refresh_problem = False
         token = uuid.uuid4().hex
         state.refresh_timeout_token = token
+        _LOGGER.debug(
+            "Starting refresh: person=%s, token=%s, timeout=%ss",
+            state.person,
+            token,
+            self._refresh_timeout_seconds(),
+        )
         self._schedule_refresh_timeout(state, token)
 
         await self._store.async_save(self._storage_payload())
@@ -472,8 +523,9 @@ class NextAlarmCoordinator:
     def _schedule_refresh_timeout(self, state: PersonState, token: str) -> None:
         timeout = self._refresh_timeout_seconds()
         _LOGGER.debug(
-            "Scheduling refresh timeout for %s in %ss (token=%s)",
+            "Scheduling refresh timeout: person=%s, slug=%s, timeout=%ss, token=%s",
             state.person,
+            state.slug,
             timeout,
             token,
         )
@@ -501,13 +553,19 @@ class NextAlarmCoordinator:
             return
 
         _LOGGER.debug(
-            "Refresh timeout fired for %s (token=%s, current=%s)",
-            state.person,
+            "Refresh timeout fired: slug=%s, trigger_time=%s, token=%s, current_token=%s",
+            slug,
+            trigger_time,
             token,
             state.refresh_timeout_token,
         )
 
         if state.refresh_timeout_token != token:
+            _LOGGER.debug(
+                "Refresh timeout ignored due to token mismatch: expected=%s, current=%s",
+                token,
+                state.refresh_timeout_token,
+            )
             return
 
         state.refresh_timer_cancel = None
@@ -515,5 +573,9 @@ class NextAlarmCoordinator:
         state.refresh_timeout_token = None
         await self._store.async_save(self._storage_payload())
 
-        _LOGGER.debug("Refresh timeout marked for %s at %s", state.person, trigger_time)
+        _LOGGER.debug(
+            "Refresh problem set: person=%s, slug=%s",
+            state.person,
+            slug,
+        )
         self._notify_person_update(slug)
