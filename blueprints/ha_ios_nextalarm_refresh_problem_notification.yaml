@@ -66,26 +66,25 @@ action:
 
   - choose:
 
-      # Case 1: Mobile devices selected → notify via device actions
+      # --- CASE 1: Mobile devices selected -> dynamic notify.mobile_app_<device>
       - conditions:
           - condition: template
             value_template: "{{ mobile_targets | count > 0 }}"
         sequence:
           - repeat:
-              for_each: "{{ mobile_targets }}"
+              for_each: !input mobile_devices
               sequence:
-                - domain: mobile_app
-                  type: notify
-                  device_id: !lambda "return repeat.item"
-                  title: "NextAlarm"
-                  message: !input notification_message
+                - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
                   data:
-                    subtitle: "{{ person }}"
-                    subject: "{{ person }}"
-                    url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
-                    clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
+                    title: "NextAlarm"
+                    message: !input notification_message
+                    data:
+                      subtitle: "{{ person }}"
+                      subject: "{{ person }}"
+                      url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
+                      clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
 
-      # Case 2: No devices selected → use custom notify service
+      # --- CASE 2: No devices selected -> use custom notify service
       - conditions:
           - condition: template
             value_template: "{{ mobile_targets | count == 0 }}"
