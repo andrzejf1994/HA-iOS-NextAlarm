@@ -1,43 +1,98 @@
 blueprint:
-  name: HA iOS NextAlarm - Refresh problem notification
-  description: >-
-    Send a notification when a HA iOS NextAlarm refresh timeout is detected for a
-    person.
+  name: iOS NextAlarm – Refresh problem notification
+  description: >
+    Sends a notification when a refresh problem is detected in the
+    HA iOS NextAlarm integration.
+    Documentation: https://github.com/andrzejf1994/HA-iOS-NextAlarm
   domain: automation
+
   input:
-    refresh_problem_sensor:
-      name: Refresh problem binary sensor
-      description: >-
-        The HA iOS NextAlarm "refresh problem" binary sensor for a person.
+    problem_entities:
+      name: Refresh problem entities
+      description: >
+        Select problem sensors you want to receive notifications about.
       selector:
         entity:
-          domain: binary_sensor
+          multiple: true
+          filter:
+            - integration: ha_ios_nextalarm
+              domain: binary_sensor
+              device_class: problem
+
+    mobile_devices:
+      name: Mobile devices (optional)
+      description: >
+        Select mobile devices to receive the notification.
+        Leave empty to use a custom notify service instead.
+      default: []
+      selector:
+        device:
+          multiple: true
+          filter:
+            - integration: mobile_app
+
     notify_service:
-      name: Notify service
-      description: The notify service used to send the alert.
-      selector:
-        action:
-          domain: notify
-    title:
-      name: Notification title
-      default: "HA iOS NextAlarm refresh problem"
-      selector:
-        text:
-    message:
-      name: Notification message
-      default: "A refresh timeout was detected. Open the HA iOS NextAlarm integration for details."
+      name: Custom notify service (optional)
+      description: >
+        Enter a notify service (e.g. notify.notify, notify.family, notify.andrzej).
+        This will be used only when no mobile devices are selected.
+      default: notify.notify
       selector:
         text:
 
-mode: single
+    notification_message:
+      name: Notification message
+      description: >
+        Message body. You can edit this freely.
+        The triggering person will be injected automatically into subtitle and subject.
+      default: >
+        ⚠️ A refresh error occurred in iOS NextAlarm.
+        Likely cause: an alarm is configured to repeat on only one day of the week.
+      selector:
+        text:
+          multiline: true
 
 trigger:
   - platform: state
-    entity_id: !input refresh_problem_sensor
+    entity_id: !input problem_entities
+    from: "off"
     to: "on"
 
 action:
-  - service: !input notify_service
-    data:
-      title: !input title
-      message: !input message
+  - variables:
+      person: "{{ trigger.to_state.attributes.source_person | default('Unknown') }}"
+      mobile_targets: !input mobile_devices
+      notify_target: !input notify_service
+
+  - choose:
+      # Case 1: Mobile devices selected → notify those devices
+      - conditions:
+          - condition: template
+            value_template: "{{ mobile_targets | count > 0 }}"
+        sequence:
+          - service: notify.mobile_app
+            target:
+              device_id: "{{ mobile_targets }}"
+            data:
+              title: "NextAlarm"
+              message: !input notification_message
+              data:
+                subtitle: "{{ person }}"
+                subject: "{{ person }}"
+                url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm"
+                clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm"
+
+      # Case 2: No devices selected → use custom notify service
+      - conditions:
+          - condition: template
+            value_template: "{{ mobile_targets | count == 0 }}"
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "NextAlarm"
+              message: !input notification_message
+              data:
+                subtitle: "{{ person }}"
+                subject: "{{ person }}"
+                url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm"
+                clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm"
