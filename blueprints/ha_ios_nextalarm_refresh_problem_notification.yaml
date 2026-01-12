@@ -1,0 +1,43 @@
+blueprint:
+  name: HA iOS NextAlarm - Refresh problem notification
+  description: >-
+    Send a notification when a HA iOS NextAlarm refresh timeout is detected for a
+    person.
+  domain: automation
+  input:
+    refresh_problem_sensor:
+      name: Refresh problem binary sensor
+      description: >-
+        The HA iOS NextAlarm "refresh problem" binary sensor for a person.
+      selector:
+        entity:
+          domain: binary_sensor
+    notify_service:
+      name: Notify service
+      description: The notify service used to send the alert.
+      selector:
+        action:
+          domain: notify
+    title:
+      name: Notification title
+      default: "HA iOS NextAlarm refresh problem"
+      selector:
+        text:
+    message:
+      name: Notification message
+      default: "A refresh timeout was detected. Open the HA iOS NextAlarm integration for details."
+      selector:
+        text:
+
+mode: single
+
+trigger:
+  - platform: state
+    entity_id: !input refresh_problem_sensor
+    to: "on"
+
+action:
+  - service: !input notify_service
+    data:
+      title: !input title
+      message: !input message
