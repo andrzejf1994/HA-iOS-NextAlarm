@@ -124,6 +124,14 @@ def _restore_datetime(
                 raw_value,
                 "unparseable datetime string",
             )
+        if parsed and parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt_util.UTC)
+            _LOGGER.warning(
+                "Restored naive datetime for %s.%s, assuming UTC: %s",
+                person,
+                field,
+                parsed,
+            )
         return parsed
     _log_restore_field_error(person, slug, field, raw_value, "expected str or datetime")
     return None
@@ -164,6 +172,8 @@ def _restore_bool(
         return default
     if isinstance(raw_value, bool):
         return raw_value
+    if isinstance(raw_value, int):
+        return bool(raw_value)
     if isinstance(raw_value, str):
         normalized = raw_value.strip().casefold()
         if normalized in STR_ONOFF:
