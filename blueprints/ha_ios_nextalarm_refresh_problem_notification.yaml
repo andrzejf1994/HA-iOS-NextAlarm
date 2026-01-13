@@ -52,43 +52,50 @@ blueprint:
         text:
           multiline: true
 
+# ---- TRIGGERS ----
 trigger:
+  # Send notification when problem appears
   - platform: state
     entity_id: !input problem_entities
     from: "off"
     to: "on"
     id: problem_on
 
+  # Clear notification when problem disappears
   - platform: state
     entity_id: !input problem_entities
     from: "on"
     to: "off"
     id: problem_off
 
+# ---- ACTIONS ----
 action:
   - variables:
       person: "{{ trigger.to_state.attributes.source_person | default('Unknown') }}"
+      person_slug: "{{ person | lower }}"
       mobile_targets: !input mobile_devices
       notify_target: !input notify_service
-      is_problem: "{{ trigger.to_state.state == 'on' }}"
+      notify_tag: "ha_ios_nextalarm_{{ person_slug }}"
+      notify_url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
 
   - choose:
 
-      # =========================================================
-      # CASE 1: Mobile devices selected → notify.mobile_app_<device>
-      # =========================================================
+      # ==========================================================
+      # CASE: PROBLEM ON  -> SEND NOTIFICATION
+      # ==========================================================
       - conditions:
-          - condition: template
-            value_template: "{{ mobile_targets | count > 0 }}"
+          - condition: trigger
+            id: problem_on
         sequence:
-          - repeat:
-              for_each: !input mobile_devices
-              sequence:
-                - choose:
-                    # ---- PROBLEM ON → send notification
-                    - conditions:
-                        - condition: template
-                          value_template: "{{ is_problem }}"
+          - choose:
+
+              # --- Mobile devices selected -> notify.mobile_app_<device>
+              - conditions:
+                  - condition: template
+                    value_template: "{{ mobile_targets | count > 0 }}"
+                sequence:
+                  - repeat:
+                      for_each: !input mobile_devices
                       sequence:
                         - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
                           data:
@@ -98,34 +105,14 @@ action:
                               subtitle: "{{ person }}"
                               subject: "{{ person }}"
                               group: "ha_ios_nextalarm"
-                              tag: "ha_ios_nextalarm_{{ person }}"
-                              url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
-                              clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
+                              tag: "{{ notify_tag }}"
+                              url: "{{ notify_url }}"
+                              clickAction: "{{ notify_url }}"
 
-                    # ---- PROBLEM OFF → clear notification
-                    - conditions:
-                        - condition: template
-                          value_template: "{{ not is_problem }}"
-                      sequence:
-                        - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
-                          data:
-                            message: "clear_notification"
-                            data:
-                              tag: "ha_ios_nextalarm_{{ person }}"
-
-      # =========================================================
-      # CASE 2: No devices selected → use custom notify service
-      # =========================================================
-      - conditions:
-          - condition: template
-            value_template: "{{ mobile_targets | count == 0 }}"
-        sequence:
-          - choose:
-
-              # ---- PROBLEM ON → send notification
+              # --- No mobile devices -> use custom notify service
               - conditions:
                   - condition: template
-                    value_template: "{{ is_problem }}"
+                    value_template: "{{ mobile_targets | count == 0 }}"
                 sequence:
                   - service: "{{ notify_target }}"
                     data:
@@ -135,17 +122,40 @@ action:
                         subtitle: "{{ person }}"
                         subject: "{{ person }}"
                         group: "ha_ios_nextalarm"
-                        tag: "ha_ios_nextalarm_{{ person }}"
-                        url: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
-                        clickAction: "https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md"
+                        tag: "{{ notify_tag }}"
+                        url: "{{ notify_url }}"
+                        clickAction: "{{ notify_url }}"
 
-              # ---- PROBLEM OFF → clear notification
+      # ==========================================================
+      # CASE: PROBLEM OFF -> CLEAR NOTIFICATION (by TAG)
+      # ==========================================================
+      - conditions:
+          - condition: trigger
+            id: problem_off
+        sequence:
+          - choose:
+
+              # --- Mobile devices selected -> clear on each device
               - conditions:
                   - condition: template
-                    value_template: "{{ not is_problem }}"
+                    value_template: "{{ mobile_targets | count > 0 }}"
+                sequence:
+                  - repeat:
+                      for_each: !input mobile_devices
+                      sequence:
+                        - service: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                          data:
+                            message: "clear_notification"
+                            data:
+                              tag: "{{ notify_tag }}"
+
+              # --- No mobile devices -> clear via custom notify service
+              - conditions:
+                  - condition: template
+                    value_template: "{{ mobile_targets | count == 0 }}"
                 sequence:
                   - service: "{{ notify_target }}"
                     data:
                       message: "clear_notification"
                       data:
-                        tag: "ha_ios_nextalarm_{{ person }}"
+                        tag: "{{ notify_tag }}"
