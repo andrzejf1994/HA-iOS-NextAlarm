@@ -69,12 +69,16 @@ class NextAlarmOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Manage the options."""
-
         errors: dict[str, str] = {}
+
+        # Safely get current options
         current = dict(DEFAULT_OPTIONS)
-        options = self.config_entry.options
-        if isinstance(options, dict):
-            current.update(options)
+        try:
+            options = self.config_entry.options
+            if isinstance(options, dict):
+                current.update(options)
+        except Exception as err:
+            _LOGGER.warning("Failed to load current options, using defaults: %s", err)
 
         def _option_str(value: Any, default: str) -> str:
             return value if isinstance(value, str) else default
@@ -98,11 +102,30 @@ class NextAlarmOptionsFlow(config_entries.OptionsFlow):
             current.get(CONF_REFRESH_TIMEOUT),
             DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT],
         )
+
+        # Initialize with safe defaults to prevent AttributeError on maps_preview.keys()
+        maps_preview: dict[str, dict[str, int]] = {}
+        map_errors: list[str] = []
+
         try:
-            maps_preview, _ = helpers.build_weekday_maps(form_map)
-        except Exception as err:  # pragma: no cover - defensive against malformed data
-            _LOGGER.debug("Options preview map parsing failed: %s", err)
-            maps_preview, _ = helpers.build_weekday_maps(DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP])
+            maps_preview, map_errors = helpers.build_weekday_maps(form_map)
+        except Exception as err:
+            _LOGGER.error("Options map parsing failed: %s", err, exc_info=True)
+            try:
+                maps_preview, map_errors = helpers.build_weekday_maps(
+                    DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP]
+                )
+            except Exception as fallback_err:
+                _LOGGER.error(
+                    "Failed to build default map: %s. Using empty fallback.",
+                    fallback_err,
+                    exc_info=True,
+                )
+                # Use base maps from const as last resort
+                from .const import WEEKDAY_MAPS
+
+                maps_preview = dict(WEEKDAY_MAPS)
+                map_errors = ["Failed to parse custom map, using defaults"]
 
         if user_input is not None:
             form_locale = _option_str(
@@ -128,24 +151,40 @@ class NextAlarmOptionsFlow(config_entries.OptionsFlow):
 
             try:
                 maps_preview, map_errors = helpers.build_weekday_maps(form_map)
-            except Exception as err:  # pragma: no cover - defensive against malformed data
-                _LOGGER.debug("Options map parsing failed: %s", err)
-                maps_preview, map_errors = helpers.build_weekday_maps(
-                    DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP]
-                )
+            except Exception as err:
+                _LOGGER.error("Options map parsing failed: %s", err, exc_info=True)
+                try:
+                    maps_preview, map_errors = helpers.build_weekday_maps(
+                        DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP]
+                    )
+                except Exception:
+                    from .const import WEEKDAY_MAPS
+
+                    maps_preview = dict(WEEKDAY_MAPS)
                 errors["base"] = "invalid_custom_map"
+
             if map_errors:
                 errors["base"] = "invalid_custom_map"
+
             if not errors:
                 return self.async_create_entry(
+                    title="",  # Title is ignored for options flow
                     data={
                         CONF_WEEKDAY_LOCALE: form_locale,
                         CONF_WEEKDAY_CUSTOM_MAP: form_map,
                         CONF_REFRESH_TIMEOUT: timeout_value,
-                    }
+                    },
                 )
 
-        locales = sorted({*OPTION_WEEKDAY_LOCALES, *maps_preview.keys(), form_locale})
+        # Build locale list safely to prevent crashes
+        try:
+            locales = sorted({*OPTION_WEEKDAY_LOCALES, *maps_preview.keys(), form_locale})
+        except Exception as err:
+            _LOGGER.error("Failed to build locales list: %s", err, exc_info=True)
+            locales = list(OPTION_WEEKDAY_LOCALES)
+            if form_locale not in locales:
+                locales.append(form_locale)
+            locales.sort()
 
         schema = vol.Schema(
             {
