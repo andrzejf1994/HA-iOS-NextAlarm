@@ -2,7 +2,7 @@ blueprint:
   name: iOS NextAlarm – Refresh problem notification
   description: >
     📱 iOS NextAlarm – Refresh problem notification  
-    **Version: 1.1.0**
+    **Version: 1.0**
   
     Sends a notification when a refresh problem is detected in the
     HA iOS NextAlarm integration and automatically clears it once the
