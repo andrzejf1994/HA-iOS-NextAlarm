@@ -39,6 +39,14 @@ from . import helpers
 _LOGGER = logging.getLogger(__name__)
 
 
+class RestoreFieldError(Exception):
+    """Capture restore failures with optional field context."""
+
+    def __init__(self, field: str | None, message: str) -> None:
+        super().__init__(message)
+        self.field = field
+
+
 def _log_restore_field_error(
     person: str,
     slug: str,
@@ -54,6 +62,31 @@ def _log_restore_field_error(
         raw_value,
         type(raw_value),
         error,
+    )
+
+
+def _log_restore_bool_fallback(
+    person: str,
+    slug: str,
+    field: str,
+    raw_value: Any,
+    reason: str,
+    default: bool,
+) -> None:
+    level = logging.WARNING
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip().casefold()
+        if normalized in {"1", "0", "true", "false", "on", "off"}:
+            level = logging.DEBUG
+    _LOGGER.log(
+        level,
+        "Restore boolean fallback: person=%s, slug=%s, field=%s, raw_value=%r, reason=%s, default=%s",
+        person,
+        slug,
+        field,
+        raw_value,
+        reason,
+        default,
     )
 
 
@@ -113,6 +146,15 @@ def _restore_datetime(
     if raw_value is None:
         return None
     if isinstance(raw_value, datetime):
+        if raw_value.tzinfo is None:
+            _LOGGER.warning(
+                "Restored naive datetime, assuming UTC: person=%s, slug=%s, field=%s, value=%r",
+                person,
+                slug,
+                field,
+                raw_value,
+            )
+            return raw_value.replace(tzinfo=dt_util.UTC)
         return raw_value
     if isinstance(raw_value, str):
         parsed = dt_util.parse_datetime(raw_value)
@@ -125,13 +167,14 @@ def _restore_datetime(
                 "unparseable datetime string",
             )
         if parsed and parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=dt_util.UTC)
             _LOGGER.warning(
-                "Restored naive datetime for %s.%s, assuming UTC: %s",
+                "Restored naive datetime, assuming UTC: person=%s, slug=%s, field=%s, value=%r",
                 person,
+                slug,
                 field,
-                parsed,
+                raw_value,
             )
+            parsed = parsed.replace(tzinfo=dt_util.UTC)
         return parsed
     _log_restore_field_error(person, slug, field, raw_value, "expected str or datetime")
     return None
@@ -173,16 +216,66 @@ def _restore_bool(
     if isinstance(raw_value, bool):
         return raw_value
     if isinstance(raw_value, int):
-        return bool(raw_value)
+        if raw_value in (0, 1):
+            return bool(raw_value)
+        _log_restore_bool_fallback(
+            person,
+            slug,
+            field,
+            raw_value,
+            "integer must be 0 or 1",
+            default,
+        )
+        return default
     if isinstance(raw_value, str):
         normalized = raw_value.strip().casefold()
         if normalized in STR_ONOFF:
+            _log_restore_bool_fallback(
+                person,
+                slug,
+                field,
+                raw_value,
+                "coerced boolean string",
+                default,
+            )
             return STR_ONOFF[normalized]
         if normalized in {"true", "false"}:
+            _log_restore_bool_fallback(
+                person,
+                slug,
+                field,
+                raw_value,
+                "coerced boolean string",
+                default,
+            )
             return normalized == "true"
-        _log_restore_field_error(person, slug, field, raw_value, "invalid boolean string")
+        if normalized in {"1", "0"}:
+            _log_restore_bool_fallback(
+                person,
+                slug,
+                field,
+                raw_value,
+                "coerced boolean string",
+                default,
+            )
+            return normalized == "1"
+        _log_restore_bool_fallback(
+            person,
+            slug,
+            field,
+            raw_value,
+            "invalid boolean string",
+            default,
+        )
         return default
-    _log_restore_field_error(person, slug, field, raw_value, "expected bool or str")
+    _log_restore_bool_fallback(
+        person,
+        slug,
+        field,
+        raw_value,
+        "expected bool, int, or str",
+        default,
+    )
     return default
 
 
@@ -517,13 +610,13 @@ class NextAlarmCoordinator:
             self._remove_refresh_listener()
             self._remove_refresh_listener = None
         for state in self._person_states.values():
-            if state.timer_cancel:
-                state.timer_cancel()
-                state.timer_cancel = None
-            if state.refresh_timer_cancel:
-                state.refresh_timer_cancel()
-                state.refresh_timer_cancel = None
-        await self._store.async_save(self._storage_payload())
+            self._safe_cancel_timer(state.timer_cancel, "rollover", state.slug)
+            state.timer_cancel = None
+            self._safe_cancel_timer(
+                state.refresh_timer_cancel, "refresh-timeout", state.slug
+            )
+            state.refresh_timer_cancel = None
+        await self._async_save_storage()
 
     def async_add_person_listener(self, listener: Callable[[str], None]) -> Callable[[], None]:
         """Register a callback for new persons."""
@@ -566,7 +659,14 @@ class NextAlarmCoordinator:
             try:
                 state = PersonState.from_dict(slug, stored)
             except Exception as err:  # pragma: no cover - safety net
-                _LOGGER.warning("Failed to restore state for %s: %s", slug, err)
+                field = getattr(err, "field", None) if isinstance(err, RestoreFieldError) else None
+                _LOGGER.warning(
+                    "Failed to restore state for person=%s, slug=%s, field=%s",
+                    stored.get("person"),
+                    slug,
+                    field or "unknown",
+                    exc_info=True,
+                )
                 continue
             self._person_states[slug] = state
             reference_now = dt_util.utcnow()
@@ -644,18 +744,7 @@ class NextAlarmCoordinator:
             _LOGGER.warning("Event for %s does not contain alarm dictionary", person_raw)
             return
 
-        slug = _person_slug(person)
-        _LOGGER.debug("Derived slug=%s for person=%s", slug, person)
-        if slug not in self._person_states:
-            for existing in self._person_states.values():
-                if existing.person == person:
-                    _LOGGER.debug(
-                        "Remapped incoming person %s to existing slug=%s",
-                        person,
-                        existing.slug,
-                    )
-                    slug = existing.slug
-                    break
+        slug = self._resolve_person_slug(person)
         if slug not in self._person_states:
             _LOGGER.debug("Creating new PersonState: slug=%s, person=%s", slug, person)
             self._person_states[slug] = PersonState(slug=slug, person=person)
@@ -703,8 +792,7 @@ class NextAlarmCoordinator:
         state.raw_event = {
             "event_type": event.event_type,
             "origin": event.origin,
-            "context": helpers.ensure_serializable(event.context.as_dict()),
-            "data": helpers.ensure_serializable(event.data),
+            "data": helpers.sanitize_diagnostics_event(event.data),
             "time_fired": reference_now.isoformat(),  # Persist the firing time for traceability.
         }
         _LOGGER.debug(
@@ -715,7 +803,7 @@ class NextAlarmCoordinator:
         )
 
         self._schedule_rollover(state)
-        await self._store.async_save(self._storage_payload())
+        await self._async_save_storage()
         _LOGGER.debug(
             "Processed NextAlarm event for %s; next alarm %s",
             state.person,
@@ -731,18 +819,7 @@ class NextAlarmCoordinator:
 
         _LOGGER.debug("EVENT_REFRESH_START received for person_raw=%s", person_raw)
         person = str(person_raw)
-        slug = _person_slug(person)
-        _LOGGER.debug("Refresh start mapped to slug=%s for person=%s", slug, person)
-        if slug not in self._person_states:
-            for existing in self._person_states.values():
-                if existing.person == person:
-                    _LOGGER.debug(
-                        "Remapped incoming person %s to existing slug=%s",
-                        person,
-                        existing.slug,
-                    )
-                    slug = existing.slug
-                    break
+        slug = self._resolve_person_slug(person)
         if slug not in self._person_states:
             _LOGGER.debug("Creating new PersonState: slug=%s, person=%s", slug, person)
             self._person_states[slug] = PersonState(slug=slug, person=person)
@@ -765,7 +842,7 @@ class NextAlarmCoordinator:
         )
         self._schedule_refresh_timeout(state, token)
 
-        await self._store.async_save(self._storage_payload())
+        await self._async_save_storage()
         _LOGGER.debug("Processed refresh start event for %s", state.person)
         self._notify_person_update(slug)
 
@@ -778,7 +855,7 @@ class NextAlarmCoordinator:
 
     def _schedule_rollover(self, state: PersonState) -> None:
         if state.timer_cancel:
-            state.timer_cancel()
+            self._safe_cancel_timer(state.timer_cancel, "rollover", state.slug)
             state.timer_cancel = None
         if not state.next_alarm_time:
             return
@@ -801,7 +878,7 @@ class NextAlarmCoordinator:
             state.previous_alarm_key = state.next_alarm_key
         self._refresh_schedule(state, reference_time=trigger_time)
         self._schedule_rollover(state)
-        await self._store.async_save(self._storage_payload())
+        await self._async_save_storage()
         _LOGGER.debug("Rollover executed for %s", state.person)
         self._notify_person_update(slug)
 
@@ -850,6 +927,8 @@ class NextAlarmCoordinator:
 
         @callback
         def _fire(*_args) -> None:
+            # The token check in _async_mark_refresh_timeout prevents stale timers
+            # from marking a newer refresh as failed, even if cancellation races.
             self.hass.async_create_task(
                 self._async_mark_refresh_timeout(
                     state.slug, dt_util.utcnow(), token
@@ -860,7 +939,7 @@ class NextAlarmCoordinator:
 
     def _cancel_refresh_timer(self, state: PersonState) -> None:
         if state.refresh_timer_cancel:
-            state.refresh_timer_cancel()
+            self._safe_cancel_timer(state.refresh_timer_cancel, "refresh-timeout", state.slug)
             state.refresh_timer_cancel = None
 
     async def _async_mark_refresh_timeout(
@@ -878,6 +957,7 @@ class NextAlarmCoordinator:
             state.refresh_timeout_token,
         )
 
+        # Token validation ensures old timers cannot mark newer refreshes as failed.
         if state.refresh_timeout_token != token:
             _LOGGER.debug(
                 "Refresh timeout ignored due to token mismatch: expected=%s, current=%s",
@@ -889,7 +969,7 @@ class NextAlarmCoordinator:
         state.refresh_timer_cancel = None
         state.refresh_problem = True
         state.refresh_timeout_token = None
-        await self._store.async_save(self._storage_payload())
+        await self._async_save_storage()
 
         _LOGGER.debug(
             "Refresh problem set: person=%s, slug=%s",
@@ -897,3 +977,56 @@ class NextAlarmCoordinator:
             slug,
         )
         self._notify_person_update(slug)
+
+    def _resolve_person_slug(self, person: str) -> str:
+        """Resolve a unique slug for a person, handling collisions safely."""
+
+        for existing in self._person_states.values():
+            if existing.person == person:
+                _LOGGER.debug(
+                    "Remapped incoming person %s to existing slug=%s",
+                    person,
+                    existing.slug,
+                )
+                return existing.slug
+
+        base_slug = _person_slug(person)
+        if base_slug not in self._person_states:
+            _LOGGER.debug("Derived slug=%s for person=%s", base_slug, person)
+            return base_slug
+
+        _LOGGER.error(
+            "Slug collision detected: old_person=%s, new_person=%s, slug=%s",
+            self._person_states[base_slug].person,
+            person,
+            base_slug,
+        )
+        suffix = 1
+        while f"{base_slug}_{suffix}" in self._person_states:
+            suffix += 1
+        resolved = f"{base_slug}_{suffix}"
+        _LOGGER.debug(
+            "Resolved slug collision: base_slug=%s, new_slug=%s, person=%s",
+            base_slug,
+            resolved,
+            person,
+        )
+        return resolved
+
+    async def _async_save_storage(self) -> None:
+        try:
+            await self._store.async_save(self._storage_payload())
+        except Exception:  # pragma: no cover - safety net
+            _LOGGER.error("Failed to persist NextAlarm storage", exc_info=True)
+
+    def _safe_cancel_timer(
+        self, cancel: CALLBACK_TYPE | None, label: str, slug: str
+    ) -> None:
+        if not cancel:
+            return
+        try:
+            cancel()
+        except Exception:  # pragma: no cover - safety net
+            _LOGGER.error(
+                "Failed to cancel %s timer for slug=%s", label, slug, exc_info=True
+            )

@@ -84,6 +84,7 @@ class NextAlarmRefreshProblemBinarySensor(BinarySensorEntity):
 
     @callback
     def _handle_update(self) -> None:
+        _async_update_device_registry(self.hass, self._coordinator, self._slug)
         self.async_write_ha_state()
 
     @property
@@ -129,9 +130,12 @@ def _async_update_device_registry(
     if hass is None:
         return
     name = _device_name(coordinator, slug)
-    dr.async_get(hass).async_get_or_create(
+    registry = dr.async_get(hass)
+    device = registry.async_get_or_create(
         config_entry_id=coordinator.entry.entry_id,
         identifiers={_device_identifier(coordinator, slug)},
         manufacturer=DEVICE_MANUFACTURER,
         name=name,
     )
+    if device.name != name:
+        registry.async_update_device(device.id, name=name)

@@ -501,3 +501,26 @@ def ensure_serializable(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
+
+
+def sanitize_diagnostics_event(value: Any) -> Any:
+    """Sanitize event payloads for diagnostics by removing sensitive fields."""
+
+    if isinstance(value, Mapping):
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            key_str = str(key)
+            normalized_key = key_str.casefold().replace("_", "")
+            if normalized_key == "context":
+                continue
+            if any(
+                token in normalized_key
+                for token in ("deviceid", "contextid", "userid", "sourceid")
+            ):
+                sanitized[key_str] = "<redacted>"
+                continue
+            sanitized[key_str] = sanitize_diagnostics_event(item)
+        return sanitized
+    if isinstance(value, (list, tuple, set)):
+        return [sanitize_diagnostics_event(item) for item in value]
+    return ensure_serializable(value)
