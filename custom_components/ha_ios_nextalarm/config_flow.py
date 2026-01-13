@@ -136,18 +136,6 @@ class NextAlarmOptionsFlow(config_entries.OptionsFlow):
                 user_input.get(CONF_WEEKDAY_CUSTOM_MAP),
                 DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP],
             )
-            timeout_input = user_input.get(CONF_REFRESH_TIMEOUT, form_timeout)
-            timeout_valid = True
-            try:
-                timeout_value = int(timeout_input)
-            except (TypeError, ValueError):
-                timeout_valid = False
-            else:
-                if timeout_value < 1:
-                    timeout_valid = False
-            if not timeout_valid:
-                errors[CONF_REFRESH_TIMEOUT] = "invalid_refresh_timeout"
-                timeout_value = form_timeout
 
             try:
                 maps_preview, map_errors = helpers.build_weekday_maps(form_map)
@@ -172,7 +160,9 @@ class NextAlarmOptionsFlow(config_entries.OptionsFlow):
                     data={
                         CONF_WEEKDAY_LOCALE: form_locale,
                         CONF_WEEKDAY_CUSTOM_MAP: form_map,
-                        CONF_REFRESH_TIMEOUT: timeout_value,
+                        CONF_REFRESH_TIMEOUT: user_input.get(
+                            CONF_REFRESH_TIMEOUT, form_timeout
+                        ),
                     },
                 )
 
