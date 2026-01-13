@@ -1,9 +1,27 @@
 blueprint:
   name: iOS NextAlarm – Refresh problem notification
   description: >
+    📱 iOS NextAlarm – Refresh problem notification  
+    **Version: 1.1.0**
+  
     Sends a notification when a refresh problem is detected in the
-    HA iOS NextAlarm integration and clears it when the problem is resolved.
-    Documentation: https://github.com/andrzejf1994/HA-iOS-NextAlarm
+    HA iOS NextAlarm integration and automatically clears it once the
+    problem is resolved.
+  
+    The notification includes:
+    - The affected person (from the sensor attribute `source_person`)
+    - A persistent tag (`ha_ios_nextalarm_<person>`) for proper cleanup
+    - A direct link to the documented Apple Shortcuts bug
+  
+    When the sensor changes from **off → on**, a warning is sent.  
+    When it changes from **on → off**, the notification is automatically cleared.
+  
+    Supported delivery methods:
+    - 📲 Mobile App devices (dynamic `notify.mobile_app_*`)
+    - 🔔 Custom notify services (`notify.notify`, `notify.family`, etc.)
+  
+    Documentation:
+    https://github.com/andrzejf1994/HA-iOS-NextAlarm
   domain: automation
 
   input:
