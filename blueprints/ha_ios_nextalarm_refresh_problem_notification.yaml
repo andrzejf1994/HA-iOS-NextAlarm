@@ -1,27 +1,7 @@
 blueprint:
   name: iOS NextAlarm – Refresh problem notification
-  description: >
-    📱 iOS NextAlarm – Refresh problem notification  
-    **Version: 1.0**
-  
-    Sends a notification when a refresh problem is detected in the
-    HA iOS NextAlarm integration and automatically clears it once the
-    problem is resolved.
-  
-    The notification includes:
-    - The affected person (from the sensor attribute `source_person`)
-    - A persistent tag (`ha_ios_nextalarm_<person>`) for proper cleanup
-    - A direct link to the documented Apple Shortcuts bug
-  
-    When the sensor changes from **off → on**, a warning is sent.  
-    When it changes from **on → off**, the notification is automatically cleared.
-  
-    Supported delivery methods:
-    - 📲 Mobile App devices (dynamic `notify.mobile_app_*`)
-    - 🔔 Custom notify services (`notify.notify`, `notify.family`, etc.)
-  
-    Documentation:
-    https://github.com/andrzejf1994/HA-iOS-NextAlarm
+  description: "# 📱 iOS NextAlarm – Refresh Problem Notification\n**Version: 1.1.0**\n\n⚠️ Sends a notification when a refresh problem is detected in the **HA iOS NextAlarm** integration and automatically clears it once the issue is resolved.\n\n---\n\n## 🔧 What this automation does\n\n- Sends a notification when a refresh error occurs (state changes from **off → on**)\n- Clears the notification automatically when the problem is resolved (**on → off**)\n- Shows **which person** is affected using the `source_person` attribute\n- Uses per-person persistent tags: `ha_ios_nextalarm_<person>`\n- Works with:\n  - 📱 **mobile_app devices**\n  - 🔔 **custom notify services** (e.g. `notify.notify`, `notify.family`)\n\n---\n\n## 🐞 Known Apple Shortcuts Bug\n\nApple Shortcuts currently fails when an alarm is configured to repeat on **only one day of the week**. In this case, the shortcut crashes and Home Assistant cannot refresh the next alarm.\n\n**Workaround:**\n- Remove repeating from that alarm, or\n- Set it to repeat on **at least two days per week**.\n\n---\n\n## 📚 Documentation\n\n- Integration: https://github.com/andrzejf1994/HA-iOS-NextAlarm\n- Bug explanation: https://github.com/andrzejf1994/HA-iOS-NextAlarm/blob/main/docs/apple-shortcuts-single-day-repeat-bug.md\n"
+
   domain: automation
 
   input:
