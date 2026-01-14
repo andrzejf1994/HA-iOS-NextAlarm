@@ -19,12 +19,14 @@
         "description": "Dostosuj interpretację nazw dni tygodnia z automatyzacji.",
         "data": {
           "weekday_locale": "Mapa dni tygodnia",
-          "weekday_custom_map": "Niestandardowa mapa dni tygodnia (JSON)"
+          "weekday_custom_map": "Niestandardowa mapa dni tygodnia (JSON)",
+          "refresh_timeout": "Limit czasu odświeżania (minuty)"
         }
       }
     },
     "error": {
-      "invalid_custom_map": "Mapa dni tygodnia musi być prawidłowym JSON-em bez błędów."
+      "invalid_custom_map": "Mapa dni tygodnia musi być prawidłowym JSON-em bez błędów.",
+      "unknown": "Nieoczekiwany błąd podczas wczytywania opcji. Sprawdź logi."
     }
   },
   "entity": {
