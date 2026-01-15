@@ -69,6 +69,38 @@ class NextAlarmOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Manage the options."""
+        _LOGGER.debug("Options flow init started with user_input=%s", user_input)
+        try:
+            return await self._async_step_init_internal(user_input)
+        except Exception:
+            _LOGGER.exception(
+                "Options flow init failed with user_input=%s options=%s",
+                user_input,
+                dict(self.config_entry.options) if self.config_entry.options else {},
+            )
+            return self._async_show_fallback_form({"base": "unknown"})
+
+    def _async_show_fallback_form(self, errors: dict[str, str]) -> FlowResult:
+        """Show a safe fallback form when options flow fails unexpectedly."""
+        form_locale = DEFAULT_OPTIONS[CONF_WEEKDAY_LOCALE]
+        form_map = DEFAULT_OPTIONS[CONF_WEEKDAY_CUSTOM_MAP]
+        form_timeout = DEFAULT_OPTIONS[CONF_REFRESH_TIMEOUT]
+        locales = list(OPTION_WEEKDAY_LOCALES)
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_WEEKDAY_LOCALE, default=form_locale): vol.In(locales),
+                vol.Optional(CONF_WEEKDAY_CUSTOM_MAP, default=form_map): str,
+                vol.Required(CONF_REFRESH_TIMEOUT, default=form_timeout): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=1),
+                ),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
+
+    async def _async_step_init_internal(
+        self, user_input: dict[str, Any] | None
+    ) -> FlowResult:
         errors: dict[str, str] = {}
 
         # Safely get current options

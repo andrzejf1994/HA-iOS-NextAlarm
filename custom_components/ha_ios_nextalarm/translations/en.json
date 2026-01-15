@@ -19,12 +19,14 @@
         "description": "Adjust how weekday names from the shortcut are interpreted.",
         "data": {
           "weekday_locale": "Weekday locale",
-          "weekday_custom_map": "Custom weekday map (JSON)"
+          "weekday_custom_map": "Custom weekday map (JSON)",
+          "refresh_timeout": "Refresh timeout (minutes)"
         }
       }
     },
     "error": {
-      "invalid_custom_map": "Custom weekday map must be valid JSON without validation errors."
+      "invalid_custom_map": "Custom weekday map must be valid JSON without validation errors.",
+      "unknown": "Unexpected error while loading options. Check the logs for details."
     }
   },
   "entity": {
